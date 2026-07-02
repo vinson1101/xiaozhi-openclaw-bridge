@@ -17,6 +17,7 @@
 - No-flash ESP-IDF build path exists in `docs/PHASE6E_BUILD_VALIDATION.md`.
 - First-flash and restore review exists in `docs/PHASE6G_FIRST_FLASH_REVIEW.md`.
 - Sanitized boot log and pin recon exists in `docs/PHASE6H_BOOT_PIN_RECON.md`.
+- LCD pin map search and probe gate exists in `docs/PHASE6I_LCD_PROBE_GATE.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
 - No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xe22b0`, with 75% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
@@ -156,6 +157,7 @@ Tasks:
 - [x] Add no-flash ESP-IDF build script.
 - [x] Validate ESP-IDF build locally after ESP-IDF is installed or sourced.
 - [x] Review first-flash command and restore checklist, without flashing.
+- [x] Search for Zuowei LCD pin map and define LCD probe gate, without flashing.
 - [ ] Send avatar eye rectangles to ST7789 after LCD pins are confirmed.
 - [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
@@ -232,10 +234,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6I:
+Start with Phase 6J:
 
 ```text
-do not hardcode LCD pins; obtain Zuowei pin map or prepare an explicitly approved LCD probe
+get Zuowei schematic/source, physical trace LCD pins, or explicit approval for temporary LCD probe firmware
 ```
 
 No firmware write should happen without explicit approval in the current session.
