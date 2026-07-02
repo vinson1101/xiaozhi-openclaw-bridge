@@ -27,6 +27,7 @@ Project documents:
 - [docs/PHASE6G_FIRST_FLASH_REVIEW.md](docs/PHASE6G_FIRST_FLASH_REVIEW.md): first-flash and restore review
 - [docs/PHASE6H_BOOT_PIN_RECON.md](docs/PHASE6H_BOOT_PIN_RECON.md): sanitized boot log and pin recon
 - [docs/PHASE6I_LCD_PROBE_GATE.md](docs/PHASE6I_LCD_PROBE_GATE.md): LCD pin map search and probe gate
+- [docs/PHASE6J_OPEN_C3_REFERENCES.md](docs/PHASE6J_OPEN_C3_REFERENCES.md): open C3 reference board check
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan
