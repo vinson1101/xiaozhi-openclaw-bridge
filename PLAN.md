@@ -11,6 +11,8 @@
 - Device HTTP simulator exists in `docs/PHASE4_DEVICE_HTTP.md`.
 - Hardware recon exists in `docs/PHASE5_HARDWARE_RECON.md`.
 - Firmware skeleton exists in `docs/PHASE6_FIRMWARE_SKELETON.md`.
+- Firmware WiFi hello exists in `docs/PHASE6B_WIFI_HELLO.md`.
+- M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - No firmware has been flashed for this project.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
@@ -135,11 +137,12 @@ Goal: bring up a private firmware without audio first.
 Tasks:
 
 - [x] Create ESP-IDF firmware workspace.
-- [ ] Implement WiFi config.
+- [x] Implement WiFi config.
 - [x] Implement NVS config read path for Bridge URL and token.
 - [ ] Implement ST7789 status screen.
-- [ ] Implement animated eyes MVP: static eyes, blinking, state changes.
-- [ ] Implement HTTP JSON `hello`.
+- [x] Implement avatar eye state model and blinking geometry.
+- [ ] Draw avatar eyes on ST7789.
+- [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
 
 Acceptance:
@@ -214,10 +217,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6B:
+Start with Phase 6C:
 
 ```text
-WiFi plus HTTP device hello, still without flashing
+wire avatar eye geometry to ST7789 drawing, still without flashing
 ```
 
 Do not flash firmware until the restore path is reviewed again.

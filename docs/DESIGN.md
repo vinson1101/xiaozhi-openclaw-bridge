@@ -83,7 +83,7 @@ Agent 后端
 - WiFi 配网和自动重连。
 - Bridge 地址配置，保存在 NVS。
 - 设备身份和配对 token。
-- WebSocket 客户端，主动连接 Bridge。
+- HTTP JSON 客户端，先发送 Bridge hello；WebSocket 等音频流阶段再加。
 - ST7789 屏幕状态 UI。
 - 按键触发录音。
 - 音频上传。
@@ -121,7 +121,9 @@ Agent 后端
 - 说话时眼睛和简单嘴型/波形同步。
 - 错误时眼睛变窄、低亮或显示困惑状态。
 
-当前 ESP32-C3 首版不直接移植 M5Stack Avatar 库，而是复刻它的交互效果：用 ST7789 直接绘制参数化眼睛，少依赖、少内存、好调试。
+当前 ESP32-C3 首版不直接移植 M5Stack Avatar 库，而是迁移它适合本项目的部分：状态模型、眼睛参数、眨眼/视线/说话状态的交互观感。实现方式仍是 ST7789 直接绘制，少依赖、少内存、好调试。
+
+不复制 GPLv3 RoboEyes 源码；只参考效果。
 
 声音目标：
 
@@ -148,9 +150,9 @@ Bridge 是产品核心。
 
 推荐传输：
 
-- 板端到 Bridge：WebSocket 主动连接。
+- 板端到 Bridge：先用 HTTP JSON。
 - 控制消息：JSON。
-- 音频帧：二进制 WebSocket frame。
+- 音频帧：后续用二进制 WebSocket frame。
 - 局域网开发：可以先用 `ws://`。
 - VPS：必须用 `wss://`，放在反向代理后面。
 
@@ -229,13 +231,13 @@ MimiClaw 的价值是参考本地文件式记忆和 skill 思路，但当前 ESP
 局域网模式：
 
 ```text
-board -> ws://bridge.local:8788 -> local OpenClaw/Hermas/Zebra
+board -> http://bridge.local:8788 -> local OpenClaw/Hermas/Zebra
 ```
 
 VPS 模式：
 
 ```text
-board -> wss://voice.example.com/device -> VPS Bridge -> OpenClaw/Hermas/Zebra
+board -> https://voice.example.com -> VPS Bridge -> OpenClaw/Hermas/Zebra
 ```
 
 没有局域网 Agent 时，VPS 模式完全可行。板端只需要能出网。
@@ -245,7 +247,7 @@ board -> wss://voice.example.com/device -> VPS Bridge -> OpenClaw/Hermas/Zebra
 1. 设计基线和原 flash 备份。
 2. 文本 Bridge：HTTP 文本输入，后端文本输出。
 3. Bridge event store：SQLite 保存 session 和 event。
-4. 设备模拟器：WebSocket 客户端发送文本和占位音频。
+4. 设备模拟器：HTTP JSON 发送 hello 和文本命令。
 5. 自有固件骨架：WiFi、配对、Bridge hello、屏幕状态。
 6. OpenClaw adapter。
 7. Hermas adapter。

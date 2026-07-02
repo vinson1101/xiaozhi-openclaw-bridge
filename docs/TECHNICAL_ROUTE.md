@@ -12,7 +12,7 @@
 curl / simulator / firmware
         |
         v
-Bridge API + WebSocket
+Bridge HTTP JSON API, WebSocket later for streaming audio
         |
         v
 SQLite session events + compact memory
@@ -38,19 +38,28 @@ OpenClaw / Hermas / Zebra adapters
 - ESP-IDF。
 - ST7789 直接绘制简洁状态 UI。
 - NVS 保存 WiFi、Bridge 地址、配对 token、音量和默认后端。
-- WebSocket 主动连接 Bridge。
+- HTTP JSON 先连接 Bridge；WebSocket 等音频流阶段再加。
 - MVP 使用按键录音，不做离线唤醒词。
 
 首版不引入复杂 UI 框架。当前 C3 内存有限，M5Stack Avatar / StackChan 的价值是“灵动眼睛和人格化状态”，不是要求直接移植它们的库。
 
 做法：用 ST7789 直接绘制参数化眼睛。眼睛状态由少量参数驱动：开合、瞳孔位置、眼角弧度、亮度、眨眼节奏、说话波动。
 
+可迁移边界：
+
+- 迁移 M5Stack Avatar / StackChan 的状态模型和交互观感：idle、listening、thinking、speaking、error。
+- 迁移“眼睛参数化”的做法：开合、视线、表情、眨眼节奏。
+- 不 vendor Arduino / M5GFX / M5Unified 依赖。
+- 不复制 GPLv3 RoboEyes 代码；只保留它作为效果参考。
+- 本仓库固件代码保持 ESP-IDF + 自写小渲染器。
+
 ### 2.2 设备协议层
 
 传输：
 
-- 开发期：`ws://bridge.local:8788/device`
-- VPS：`wss://voice.example.com/device`
+- 开发期：HTTP JSON `/device/hello` 和 `/device/command`
+- 音频期：`ws://bridge.local:8788/device`
+- VPS 音频期：`wss://voice.example.com/device`
 - 控制消息：JSON
 - 音频：二进制 WebSocket frame
 
@@ -81,7 +90,7 @@ OpenClaw / Hermas / Zebra adapters
 
 技术选择：
 
-- Python 3.12。
+- Python 3.9+。
 - SQLite 作为本地事件和记忆库。
 - 文本 MVP 可以用标准库 HTTP 先跑通。
 - WebSocket 和音频阶段再引入 FastAPI/Uvicorn 或等价 ASGI 栈。
@@ -223,7 +232,7 @@ MVP 状态：
 recognized text or short result
 ```
 
-UI 参考的是 M5Stack Avatar / StackChan / RoboEyes 这类“有生命感的眼睛”，不是普通仪表盘。
+UI 参考的是 M5Stack Avatar / StackChan / RoboEyes 这类“有生命感的眼睛”，不是普通仪表盘。实际实现只迁移 MIT 项目的思路，不复制第三方源码。
 
 眼睛状态表：
 
