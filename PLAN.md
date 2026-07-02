@@ -9,6 +9,7 @@
 - Text Bridge MVP exists in `docs/PHASE1_TEXT_BRIDGE.md`.
 - OpenClaw SSH adapter exists in `docs/PHASE2_OPENCLAW_ADAPTER.md`.
 - Device HTTP simulator exists in `docs/PHASE4_DEVICE_HTTP.md`.
+- Hardware recon exists in `docs/PHASE5_HARDWARE_RECON.md`.
 - No firmware has been flashed for this project.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
@@ -112,12 +113,13 @@ Goal: prepare for safe flashing.
 
 Tasks:
 
-- [ ] Backup full 8 MB flash.
-- [ ] Record partition table.
+- [x] Backup full 8 MB flash.
+- [x] Record partition table.
+- [x] Run static recon against the local flash backup.
 - [ ] Record boot log.
-- [ ] Identify display init path.
-- [ ] Identify buttons, microphone, speaker/audio codec, and battery ADC where possible.
-- [ ] Decide whether current ESP32-C3 board is enough or whether ESP32-S3 is required.
+- [x] Identify display init path at driver level.
+- [ ] Identify exact display, button, microphone, speaker/audio codec, and battery GPIO/pin map.
+- [x] Decide whether current ESP32-C3 board is enough for Phase 6 display/control.
 
 Acceptance:
 
@@ -211,10 +213,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 3 or Phase 4 depending on network access:
+Start with Phase 6A:
 
 ```text
-Hermas adapter when office LAN is reachable, otherwise device protocol simulator.
+minimal firmware skeleton without audio
 ```
 
-Do not start firmware work until Phase 1-4 pass and Phase 5 backup is complete.
+Do not flash firmware until the restore path is reviewed again.
