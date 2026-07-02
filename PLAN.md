@@ -8,6 +8,7 @@
 - Technical route exists in `docs/TECHNICAL_ROUTE.md`.
 - Text Bridge MVP exists in `docs/PHASE1_TEXT_BRIDGE.md`.
 - OpenClaw SSH adapter exists in `docs/PHASE2_OPENCLAW_ADAPTER.md`.
+- Device HTTP simulator exists in `docs/PHASE4_DEVICE_HTTP.md`.
 - No firmware has been flashed for this project.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
@@ -89,11 +90,13 @@ Acceptance:
 
 Goal: prove the device protocol before flashing hardware.
 
+Phase 4A uses HTTP JSON first. WebSocket stays deferred until firmware consumes it.
+
 Tasks:
 
 - [ ] Add WebSocket `/device`.
-- [ ] Implement `hello`, `state`, `command.text`.
-- [ ] Add simulator script.
+- [x] Implement HTTP `hello` and `command.text`.
+- [x] Add simulator script.
 - [ ] Store device pairing in SQLite.
 - [ ] Add reconnect behavior to simulator.
 

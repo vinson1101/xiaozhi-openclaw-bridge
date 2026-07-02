@@ -17,6 +17,7 @@ Project documents:
 - [docs/PHASE0_HARDWARE.md](docs/PHASE0_HARDWARE.md): public hardware baseline
 - [docs/PHASE1_TEXT_BRIDGE.md](docs/PHASE1_TEXT_BRIDGE.md): text bridge MVP
 - [docs/PHASE2_OPENCLAW_ADAPTER.md](docs/PHASE2_OPENCLAW_ADAPTER.md): OpenClaw SSH adapter
+- [docs/PHASE4_DEVICE_HTTP.md](docs/PHASE4_DEVICE_HTTP.md): device HTTP simulator
 - [PLAN.md](PLAN.md): milestone plan
 
 ## 1. Current Hardware Baseline

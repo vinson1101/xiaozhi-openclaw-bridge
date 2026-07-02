@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from xiaozhi_openclaw_bridge.adapters import AgentRequest, adapter_for
 from xiaozhi_openclaw_bridge.store import EventStore
@@ -22,17 +23,80 @@ class BridgeApplication:
             return 200, {"status": "ok"}
         if method == "POST" and path == "/command":
             return self._command(body)
+        if method == "POST" and path == "/device/hello":
+            return self._device_hello(body)
+        if method == "POST" and path == "/device/command":
+            return self._device_command(body)
         return 404, {"error": "not_found"}
 
     def _command(self, body: bytes | None) -> tuple[int, dict[str, Any]]:
         payload, error = _parse_json(body)
         if error:
             return 400, {"error": error}
+        return self._run_command(payload)
 
+    def _device_hello(self, body: bytes | None) -> tuple[int, dict[str, Any]]:
+        payload, error = _parse_json(body or b"{}")
+        if error:
+            return 400, {"error": error}
+
+        device_id = str(payload.get("device_id") or "").strip() or f"device-{uuid4().hex[:8]}"
+        session_id = str(payload.get("session_id") or self.store.create_session("device"))
+        self.store.append_event(
+            session_id,
+            "device.hello",
+            {
+                "device_id": device_id,
+                "firmware": str(payload.get("firmware") or ""),
+                "capabilities": payload.get("capabilities") or [],
+            },
+        )
+        return 200, {
+            "device_id": device_id,
+            "session_id": session_id,
+            "protocol": "http-json-v1",
+            "state": "ready",
+        }
+
+    def _device_command(self, body: bytes | None) -> tuple[int, dict[str, Any]]:
+        payload, error = _parse_json(body)
+        if error:
+            return 400, {"error": error}
+
+        device_id = str(payload.get("device_id") or "").strip()
+        if not device_id:
+            return 400, {"error": "device_id is required"}
+
+        status, result = self._run_command(payload, source={"type": "device", "device_id": device_id})
+        if status != 200:
+            return status, result
+
+        state = _device_state(result["status"])
+        self.store.append_event(
+            result["session_id"],
+            "device.result",
+            {"device_id": device_id, "state": state},
+        )
+        return 200, {
+            "device_id": device_id,
+            "session_id": result["session_id"],
+            "state": state,
+            "display": _short_display_text(result["text"]),
+            "result": result,
+        }
+
+    def _run_command(
+        self,
+        payload: dict[str, Any],
+        source: dict[str, Any] | None = None,
+    ) -> tuple[int, dict[str, Any]]:
         text = str(payload.get("text") or "").strip()
         target = str(payload.get("target") or "fake").strip()
         if not text:
             return 400, {"error": "text is required"}
+        context = payload.get("context") or {}
+        if not isinstance(context, dict):
+            return 400, {"error": "context must be an object"}
 
         try:
             adapter = adapter_for(target)
@@ -43,14 +107,14 @@ class BridgeApplication:
         self.store.append_event(
             session_id,
             "command.received",
-            {"target": target, "text": text},
+            {"target": target, "text": text, "source": source or {"type": "http"}},
         )
         response = adapter.run(
             AgentRequest(
                 session_id=session_id,
                 target=target,
                 user_text=text,
-                context=dict(payload.get("context") or {}),
+                context=context,
             )
         )
         self.store.append_event(
@@ -111,6 +175,21 @@ def _parse_json(body: bytes | None) -> tuple[dict[str, Any], str | None]:
     if not isinstance(payload, dict):
         return {}, "request body must be a JSON object"
     return payload, None
+
+
+def _device_state(status: str) -> str:
+    if status == "error":
+        return "error"
+    if status == "needs_approval":
+        return "needs_approval"
+    return "result"
+
+
+def _short_display_text(text: str) -> str:
+    single_line = " ".join(text.split())
+    if len(single_line) <= 80:
+        return single_line
+    return single_line[:77] + "..."
 
 
 def main() -> None:
