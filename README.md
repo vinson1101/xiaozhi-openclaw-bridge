@@ -24,6 +24,7 @@ Project documents:
 - [docs/PHASE6C_EYE_RENDER.md](docs/PHASE6C_EYE_RENDER.md): ST7789-ready eye render commands
 - [docs/PHASE6D_SERIAL_PROVISIONING.md](docs/PHASE6D_SERIAL_PROVISIONING.md): USB serial provisioning
 - [docs/PHASE6E_BUILD_VALIDATION.md](docs/PHASE6E_BUILD_VALIDATION.md): no-flash ESP-IDF build validation
+- [docs/PHASE6G_FIRST_FLASH_REVIEW.md](docs/PHASE6G_FIRST_FLASH_REVIEW.md): first-flash and restore review
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan

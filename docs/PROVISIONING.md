@@ -58,4 +58,4 @@ The firmware partition table mirrors the stock board layout:
 
 Do not use a generic ESP-IDF partition template on this board.
 
-First flash should prefer writing only the app slot after build validation. Full-chip erase requires explicit restore review.
+First flash should follow the reviewed non-erase command in `docs/PHASE6G_FIRST_FLASH_REVIEW.md`. App-only flashing is not the default because stock `otadata` may not point at `ota_0`. Full-chip erase requires explicit restore review.
