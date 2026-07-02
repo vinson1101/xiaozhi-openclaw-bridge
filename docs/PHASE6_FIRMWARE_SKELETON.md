@@ -6,7 +6,7 @@ Phase 6A adds a minimal ESP-IDF project for the ESP32-C3 board. It does not flas
 
 - ESP-IDF project directory: `firmware/esp32c3`
 - ESP32-C3 target defaults
-- 8 MB flash partition table
+- 8 MB stock-compatible flash partition table
 - NVS namespace: `xob`
 - NVS keys:
   - `bridge_url`
@@ -34,6 +34,8 @@ idf.py build
 ```
 
 Do not run `idf.py flash` until the restore path is reviewed again.
+
+The partition table mirrors the observed stock Xiaozhi layout. Do not replace it with a generic ESP-IDF template for this board.
 
 ## Local Check
 

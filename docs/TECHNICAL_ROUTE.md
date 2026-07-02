@@ -28,6 +28,7 @@ OpenClaw / Hermas / Zebra adapters
 - 不直接移植 MimiClaw 到当前 C3 板；MimiClaw 只作为记忆和 skill 设计参考。
 - 不先写完整固件；固件在服务端协议稳定后再做。
 - 不让设备保存服务端 API key；设备只保存配对 token。
+- 不依赖原小智后台配置格式；新固件使用自己的 `xob` NVS namespace。
 
 ## 2. 系统分层
 
@@ -53,7 +54,25 @@ OpenClaw / Hermas / Zebra adapters
 - 不复制 GPLv3 RoboEyes 代码；只保留它作为效果参考。
 - 本仓库固件代码保持 ESP-IDF + 自写小渲染器。
 
-### 2.2 设备协议层
+### 2.2 配置和配网层
+
+原固件有后台配置，但新固件不能直接依赖它。刷入自有固件后，配置由本项目接管。
+
+配置来源优先级：
+
+1. `xob` NVS namespace。
+2. USB serial provisioning。
+3. 临时 AP + 本地 HTTP 配置页。
+
+缺失配置时不尝试连接默认 WiFi；进入 provisioning mode。屏幕显示配置状态，串口输出缺失字段名，但不输出已有 secret 值。
+
+分区策略：
+
+- 固件分区表必须匹配原小智布局。
+- 首次刷写优先写 app slot，保留 `nvs`、`otadata`、`phy_init`、`model`。
+- 长按 reset 只清除 `xob` namespace。
+
+### 2.3 设备协议层
 
 传输：
 
@@ -86,7 +105,7 @@ OpenClaw / Hermas / Zebra adapters
 - MVP：PCM16 16 kHz mono，简单可靠。
 - 后续：如果带宽或延迟不够，再考虑 Opus。
 
-### 2.3 Bridge 服务层
+### 2.4 Bridge 服务层
 
 技术选择：
 
@@ -106,7 +125,7 @@ Bridge 职责：
 - 调用 TTS。
 - 返回文本、UI 状态和音频。
 
-### 2.4 Agent 适配层
+### 2.5 Agent 适配层
 
 统一请求：
 

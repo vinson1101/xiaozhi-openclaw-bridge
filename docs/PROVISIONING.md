@@ -1,0 +1,57 @@
+# Provisioning And Configuration
+
+The original Xiaozhi firmware has its own cloud-backed configuration flow. Custom firmware cannot rely on that data format.
+
+## Rule
+
+Treat stock configuration as foreign data. Preserve it when possible, but do not depend on it.
+
+Custom firmware owns a separate NVS namespace:
+
+```text
+xob.bridge_url
+xob.device_token
+xob.wifi_ssid
+xob.wifi_password
+xob.default_target
+xob.volume
+xob.brightness
+```
+
+Secrets and WiFi values stay in NVS only. They must not be logged or committed.
+
+## First Boot
+
+Boot sequence:
+
+1. Read `xob` NVS config.
+2. If complete, connect WiFi and send `/device/hello`.
+3. If missing, enter provisioning mode.
+
+Provisioning mode should show a screen state and expose two setup paths:
+
+- USB serial setup for development.
+- Temporary WiFi AP plus local HTTP form for normal use.
+
+The AP name should be `XOB-<device-suffix>`. The local form writes only the `xob` namespace.
+
+## Reset
+
+Long-press reset should erase only the `xob` namespace, not the whole flash.
+
+## Flash Safety
+
+The firmware partition table mirrors the stock board layout:
+
+| Name | Type/SubType | Offset | Size |
+|---|---:|---:|---:|
+| `nvs` | data/nvs | `0x009000` | `0x004000` |
+| `otadata` | data/ota | `0x00d000` | `0x002000` |
+| `phy_init` | data/phy | `0x00f000` | `0x001000` |
+| `model` | data/0x82 | `0x010000` | `0x0f0000` |
+| `ota_0` | app/ota_0 | `0x100000` | `0x380000` |
+| `ota_1` | app/ota_1 | `0x480000` | `0x380000` |
+
+Do not use a generic ESP-IDF partition template on this board.
+
+First flash should prefer writing only the app slot after build validation. Full-chip erase requires explicit restore review.

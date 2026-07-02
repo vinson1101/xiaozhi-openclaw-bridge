@@ -22,6 +22,7 @@ Project documents:
 - [docs/PHASE6_FIRMWARE_SKELETON.md](docs/PHASE6_FIRMWARE_SKELETON.md): ESP32-C3 firmware skeleton
 - [docs/PHASE6B_WIFI_HELLO.md](docs/PHASE6B_WIFI_HELLO.md): ESP32-C3 WiFi and device hello
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
+- [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan
 
 ## 1. Current Hardware Baseline

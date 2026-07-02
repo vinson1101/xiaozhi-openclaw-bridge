@@ -18,11 +18,19 @@ The firmware logs whether values are configured, not the actual URL, SSID, or to
 
 ## Not Included Yet
 
-- provisioning flow
+- provisioning UI and write path
 - ST7789 screen drawing
 - animated eyes
 - command polling or WebSocket
 - audio
+
+## Configuration
+
+This firmware does not reuse the original Xiaozhi cloud configuration.
+
+It reads a separate `xob` NVS namespace. Missing keys put the firmware into provisioning mode.
+
+The partition table now mirrors the stock Xiaozhi layout, so future flashing can preserve the original `nvs`, `phy_init`, `model`, and OTA slots unless an explicit full restore/erase is chosen.
 
 ## Check
 

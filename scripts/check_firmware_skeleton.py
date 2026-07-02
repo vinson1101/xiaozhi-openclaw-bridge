@@ -13,6 +13,14 @@ REQUIRED = [
     FW / "sdkconfig.defaults",
     FW / "partitions.csv",
 ]
+PARTITIONS = {
+    "nvs": ("data", "nvs", "0x9000", "0x4000"),
+    "otadata": ("data", "ota", "0xd000", "0x2000"),
+    "phy_init": ("data", "phy", "0xf000", "0x1000"),
+    "model": ("data", "0x82", "0x10000", "0xf0000"),
+    "ota_0": ("app", "ota_0", "0x100000", "0x380000"),
+    "ota_1": ("app", "ota_1", "0x480000", "0x380000"),
+}
 
 
 def main() -> None:
@@ -24,7 +32,20 @@ def main() -> None:
     eyes_c = (FW / "main" / "eyes.c").read_text()
     for token in ["XOB_EYES_IDLE", "XOB_EYES_LISTENING", "XOB_EYES_THINKING", "XOB_EYES_SPEAKING", "XOB_EYES_ERROR"]:
         assert token in eyes_c, f"missing {token}"
+    partitions = _read_partitions(FW / "partitions.csv")
+    assert partitions == PARTITIONS, "firmware partition table must match stock layout"
     print("check_firmware_skeleton ok")
+
+
+def _read_partitions(path: Path) -> dict[str, tuple[str, str, str, str]]:
+    rows: dict[str, tuple[str, str, str, str]] = {}
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, part_type, subtype, offset, size = [item.strip().lower() for item in line.split(",")]
+        rows[name] = (part_type, subtype, offset, size)
+    return rows
 
 
 if __name__ == "__main__":

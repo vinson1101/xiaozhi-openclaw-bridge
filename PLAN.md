@@ -13,6 +13,7 @@
 - Firmware skeleton exists in `docs/PHASE6_FIRMWARE_SKELETON.md`.
 - Firmware WiFi hello exists in `docs/PHASE6B_WIFI_HELLO.md`.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
+- Provisioning plan exists in `docs/PROVISIONING.md`.
 - No firmware has been flashed for this project.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
@@ -137,8 +138,10 @@ Goal: bring up a private firmware without audio first.
 Tasks:
 
 - [x] Create ESP-IDF firmware workspace.
+- [x] Preserve stock-compatible partition layout.
 - [x] Implement WiFi config.
 - [x] Implement NVS config read path for Bridge URL and token.
+- [ ] Implement provisioning write path: USB serial first, temporary AP later.
 - [ ] Implement ST7789 status screen.
 - [x] Implement avatar eye state model and blinking geometry.
 - [ ] Draw avatar eyes on ST7789.

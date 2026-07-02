@@ -101,6 +101,35 @@ Agent 后端
 
 长期记忆放 Bridge 或 Agent 后端。
 
+## 5.1 配置和配网
+
+原小智固件的后台配置不能当作新固件的配置源。即使刷机时保留了原 NVS，里面的数据格式也属于原固件；新固件只读写自己的 `xob` namespace。
+
+新固件配置项：
+
+- `wifi_ssid`
+- `wifi_password`
+- `bridge_url`
+- `device_token`
+- `default_target`
+- `volume`
+- `brightness`
+
+首版流程：
+
+1. 开机读取 `xob` NVS。
+2. 配置完整则连接 WiFi 并向 Bridge 发送 `/device/hello`。
+3. 配置缺失则进入 provisioning mode。
+4. 开发期先支持 USB serial 写入；正常使用再加临时 AP + 本地 HTTP 配置页。
+5. 长按重置只清除 `xob` namespace，不全盘 erase。
+
+刷机策略：
+
+- 保留原厂分区布局。
+- 不使用通用 ESP-IDF 分区模板。
+- 首次刷写优先只写 app 分区。
+- 全片擦除前必须再次确认 restore 路径。
+
 ## 6. 屏幕和声音
 
 屏幕目标不是普通状态页，而是一个“可感知状态的眼睛”。
