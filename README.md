@@ -14,6 +14,7 @@ Project documents:
 
 - [docs/DESIGN.md](docs/DESIGN.md): basic product design
 - [docs/TECHNICAL_ROUTE.md](docs/TECHNICAL_ROUTE.md): technical route
+- [docs/PHASE0_HARDWARE.md](docs/PHASE0_HARDWARE.md): public hardware baseline
 - [PLAN.md](PLAN.md): milestone plan
 
 ## 1. Current Hardware Baseline

@@ -7,7 +7,7 @@
 - Basic design exists in `docs/DESIGN.md`.
 - Technical route exists in `docs/TECHNICAL_ROUTE.md`.
 - No firmware has been flashed for this project.
-- No GitHub remote has been created yet.
+- Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -18,9 +18,9 @@ Tasks:
 - [x] Create Git-backed project directory.
 - [x] Write basic product design.
 - [x] Write technical route.
-- [ ] Record current board identity and port.
-- [ ] Create full flash backup for the ESP32-C3 board.
-- [ ] Verify restore command using backup metadata, without restoring unless needed.
+- [x] Record current board identity and port.
+- [x] Create full flash backup for the ESP32-C3 board.
+- [x] Verify restore command using backup metadata, without restoring unless needed.
 
 Acceptance:
 
