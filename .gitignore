@@ -13,6 +13,8 @@ dist/
 *.map
 
 # Local scratch
+data/
+*.sqlite3
 work/
 outputs/
 .DS_Store

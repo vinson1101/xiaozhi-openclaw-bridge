@@ -15,6 +15,7 @@ Project documents:
 - [docs/DESIGN.md](docs/DESIGN.md): basic product design
 - [docs/TECHNICAL_ROUTE.md](docs/TECHNICAL_ROUTE.md): technical route
 - [docs/PHASE0_HARDWARE.md](docs/PHASE0_HARDWARE.md): public hardware baseline
+- [docs/PHASE1_TEXT_BRIDGE.md](docs/PHASE1_TEXT_BRIDGE.md): text bridge MVP
 - [PLAN.md](PLAN.md): milestone plan
 
 ## 1. Current Hardware Baseline

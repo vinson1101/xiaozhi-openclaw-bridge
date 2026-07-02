@@ -6,6 +6,7 @@
 - Git is initialized on `main`.
 - Basic design exists in `docs/DESIGN.md`.
 - Technical route exists in `docs/TECHNICAL_ROUTE.md`.
+- Text Bridge MVP exists in `docs/PHASE1_TEXT_BRIDGE.md`.
 - No firmware has been flashed for this project.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
@@ -34,11 +35,12 @@ Goal: prove that a command can reach an agent backend without touching firmware.
 Tasks:
 
 - [ ] Add minimal Python project skeleton.
-- [ ] Add `/healthz`.
-- [ ] Add `POST /command`.
-- [ ] Add fake backend adapter.
-- [ ] Add SQLite session/event store.
-- [ ] Add one command-line smoke test.
+- [x] Add minimal Python project skeleton.
+- [x] Add `/healthz`.
+- [x] Add `POST /command`.
+- [x] Add fake backend adapter.
+- [x] Add SQLite session/event store.
+- [x] Add one command-line smoke test.
 
 Acceptance:
 
