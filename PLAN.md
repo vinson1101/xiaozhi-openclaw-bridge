@@ -15,7 +15,8 @@
 - Firmware eye render commands exist in `docs/PHASE6C_EYE_RENDER.md`.
 - Firmware USB serial provisioning exists in `docs/PHASE6D_SERIAL_PROVISIONING.md`.
 - No-flash ESP-IDF build path exists in `docs/PHASE6E_BUILD_VALIDATION.md`.
-- Local ESP-IDF is not installed in the current shell.
+- Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
+- No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xe22b0`, with 75% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.
@@ -151,7 +152,7 @@ Tasks:
 - [x] Implement avatar eye state model and blinking geometry.
 - [x] Render avatar eyes as ST7789-ready RGB565 rectangles.
 - [x] Add no-flash ESP-IDF build script.
-- [ ] Validate ESP-IDF build locally after ESP-IDF is installed or sourced.
+- [x] Validate ESP-IDF build locally after ESP-IDF is installed or sourced.
 - [ ] Send avatar eye rectangles to ST7789 after LCD pins are confirmed.
 - [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
@@ -228,10 +229,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6F:
+Start with Phase 6G:
 
 ```text
-install or source ESP-IDF, then run scripts/build_firmware.sh without flashing
+review first-flash command and restore checklist, still do not flash
 ```
 
 Do not flash firmware until the restore path is reviewed again.

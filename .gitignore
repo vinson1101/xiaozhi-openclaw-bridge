@@ -8,6 +8,8 @@
 # Firmware/build outputs and board backups
 build/
 dist/
+firmware/**/sdkconfig
+firmware/**/sdkconfig.old
 *.bin
 *.elf
 *.map
