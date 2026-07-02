@@ -10,7 +10,11 @@ The target path does not depend on the official Xiaozhi cloud service. If needed
 
 The board should handle wake/listen/play/display and only lightweight local context. The server should handle ASR, TTS, routing, agent execution, durable memory, tools, and audit.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the basic design.
+Project documents:
+
+- [docs/DESIGN.md](docs/DESIGN.md): basic product design
+- [docs/TECHNICAL_ROUTE.md](docs/TECHNICAL_ROUTE.md): technical route
+- [PLAN.md](PLAN.md): milestone plan
 
 ## 1. Current Hardware Baseline
 
@@ -33,7 +37,7 @@ The ESP32-C3 is treated as a constrained endpoint, not as the main agent runtime
 ```text
 Custom board firmware
   microphone / speaker / screen / buttons
-  voice capture / playback / M5Stack-style status UI
+  voice capture / playback / animated eyes avatar UI
         |
         v
 Voice bridge service
