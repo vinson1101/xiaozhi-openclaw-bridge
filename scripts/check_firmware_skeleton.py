@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "esp32c3"
 REQUIRED = [
+    ROOT / "scripts" / "build_firmware.sh",
     FW / "CMakeLists.txt",
     FW / "main" / "CMakeLists.txt",
     FW / "main" / "main.c",
@@ -43,6 +44,10 @@ def main() -> None:
     provisioning_c = (FW / "main" / "provisioning.c").read_text()
     for token in ["NVS_READWRITE", "nvs_set_str", "nvs_commit", "bridge_url", "device_token", "wifi_ssid", "wifi_password", "esp_restart"]:
         assert token in provisioning_c, f"missing {token}"
+    build_script = (ROOT / "scripts" / "build_firmware.sh").read_text()
+    for token in ["idf.py set-target esp32c3", "idf.py build"]:
+        assert token in build_script, f"missing {token}"
+    assert "idf.py flash" not in build_script, "build script must not flash"
     partitions = _read_partitions(FW / "partitions.csv")
     assert partitions == PARTITIONS, "firmware partition table must match stock layout"
     print("check_firmware_skeleton ok")

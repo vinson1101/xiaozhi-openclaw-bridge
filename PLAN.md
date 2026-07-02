@@ -14,6 +14,9 @@
 - Firmware WiFi hello exists in `docs/PHASE6B_WIFI_HELLO.md`.
 - Firmware eye render commands exist in `docs/PHASE6C_EYE_RENDER.md`.
 - Firmware USB serial provisioning exists in `docs/PHASE6D_SERIAL_PROVISIONING.md`.
+- No-flash ESP-IDF build path exists in `docs/PHASE6E_BUILD_VALIDATION.md`.
+- Local ESP-IDF is not installed in the current shell.
+- GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.
 - No firmware has been flashed for this project.
@@ -147,6 +150,8 @@ Tasks:
 - [ ] Implement ST7789 status screen.
 - [x] Implement avatar eye state model and blinking geometry.
 - [x] Render avatar eyes as ST7789-ready RGB565 rectangles.
+- [x] Add no-flash ESP-IDF build script.
+- [ ] Validate ESP-IDF build locally after ESP-IDF is installed or sourced.
 - [ ] Send avatar eye rectangles to ST7789 after LCD pins are confirmed.
 - [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
@@ -223,10 +228,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6E:
+Start with Phase 6F:
 
 ```text
-validate ESP-IDF build locally, still without flashing
+install or source ESP-IDF, then run scripts/build_firmware.sh without flashing
 ```
 
 Do not flash firmware until the restore path is reviewed again.
