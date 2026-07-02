@@ -19,6 +19,7 @@ Project documents:
 - [docs/PHASE2_OPENCLAW_ADAPTER.md](docs/PHASE2_OPENCLAW_ADAPTER.md): OpenClaw SSH adapter
 - [docs/PHASE4_DEVICE_HTTP.md](docs/PHASE4_DEVICE_HTTP.md): device HTTP simulator
 - [docs/PHASE5_HARDWARE_RECON.md](docs/PHASE5_HARDWARE_RECON.md): hardware recon before firmware
+- [docs/PHASE6_FIRMWARE_SKELETON.md](docs/PHASE6_FIRMWARE_SKELETON.md): ESP32-C3 firmware skeleton
 - [PLAN.md](PLAN.md): milestone plan
 
 ## 1. Current Hardware Baseline

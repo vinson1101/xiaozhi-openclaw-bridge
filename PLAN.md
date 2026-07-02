@@ -10,6 +10,7 @@
 - OpenClaw SSH adapter exists in `docs/PHASE2_OPENCLAW_ADAPTER.md`.
 - Device HTTP simulator exists in `docs/PHASE4_DEVICE_HTTP.md`.
 - Hardware recon exists in `docs/PHASE5_HARDWARE_RECON.md`.
+- Firmware skeleton exists in `docs/PHASE6_FIRMWARE_SKELETON.md`.
 - No firmware has been flashed for this project.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
@@ -133,12 +134,12 @@ Goal: bring up a private firmware without audio first.
 
 Tasks:
 
-- [ ] Create ESP-IDF firmware workspace.
+- [x] Create ESP-IDF firmware workspace.
 - [ ] Implement WiFi config.
-- [ ] Implement NVS config for Bridge URL and token.
+- [x] Implement NVS config read path for Bridge URL and token.
 - [ ] Implement ST7789 status screen.
 - [ ] Implement animated eyes MVP: static eyes, blinking, state changes.
-- [ ] Implement WebSocket `hello`.
+- [ ] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
 
 Acceptance:
@@ -213,10 +214,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6A:
+Start with Phase 6B:
 
 ```text
-minimal firmware skeleton without audio
+WiFi plus HTTP device hello, still without flashing
 ```
 
 Do not flash firmware until the restore path is reviewed again.
