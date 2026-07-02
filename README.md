@@ -23,7 +23,7 @@ Observed board:
 - Chip: ESP32-C3 QFN32 rev v0.4
 - Flash: 8 MB
 - USB: native USB-Serial/JTAG
-- MAC: `b4:3a:45:52:d0:18`
+- MAC: recorded locally, not published
 - Stock firmware project: `xiaozhi`
 - Stock firmware version: `1.6.1`
 - Board/firmware type: `zuowei-c3-realtime-lcd`
