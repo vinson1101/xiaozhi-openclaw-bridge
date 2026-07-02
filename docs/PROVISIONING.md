@@ -35,6 +35,10 @@ Provisioning mode should show a screen state and expose two setup paths:
 
 The AP name should be `XOB-<device-suffix>`. The local form writes only the `xob` namespace.
 
+The first implemented path is USB serial provisioning. It prompts for `bridge_url`, `device_token`, `wifi_ssid`, and `wifi_password`, then writes only the `xob` namespace and reboots.
+
+The firmware must not call `nvs_flash_erase()` automatically. If NVS recovery is needed, stop and require an explicit restore or erase decision.
+
 ## Reset
 
 Long-press reset should erase only the `xob` namespace, not the whole flash.

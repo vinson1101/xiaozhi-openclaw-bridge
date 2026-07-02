@@ -15,6 +15,7 @@
 #include "nvs_flash.h"
 
 #include "eyes.h"
+#include "provisioning.h"
 #include "screen.h"
 
 static const char *TAG = "xob";
@@ -174,13 +175,14 @@ static esp_err_t post_device_hello(const app_config_t *config) {
 void app_main(void) {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
+        ESP_LOGE(TAG, "NVS needs recovery; refusing automatic erase to preserve stock data");
+        return;
     }
     ESP_ERROR_CHECK(err);
 
     app_config_t config = {0};
     if (load_config(&config) != ESP_OK) {
+        xob_run_serial_provisioning();
         return;
     }
     if (connect_wifi(&config) != ESP_OK) {

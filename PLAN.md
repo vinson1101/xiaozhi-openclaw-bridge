@@ -13,6 +13,7 @@
 - Firmware skeleton exists in `docs/PHASE6_FIRMWARE_SKELETON.md`.
 - Firmware WiFi hello exists in `docs/PHASE6B_WIFI_HELLO.md`.
 - Firmware eye render commands exist in `docs/PHASE6C_EYE_RENDER.md`.
+- Firmware USB serial provisioning exists in `docs/PHASE6D_SERIAL_PROVISIONING.md`.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.
 - No firmware has been flashed for this project.
@@ -142,7 +143,7 @@ Tasks:
 - [x] Preserve stock-compatible partition layout.
 - [x] Implement WiFi config.
 - [x] Implement NVS config read path for Bridge URL and token.
-- [ ] Implement provisioning write path: USB serial first, temporary AP later.
+- [x] Implement provisioning write path: USB serial first, temporary AP later.
 - [ ] Implement ST7789 status screen.
 - [x] Implement avatar eye state model and blinking geometry.
 - [x] Render avatar eyes as ST7789-ready RGB565 rectangles.
@@ -222,10 +223,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6C:
+Start with Phase 6E:
 
 ```text
-implement provisioning write path over USB serial, still without flashing
+validate ESP-IDF build locally, still without flashing
 ```
 
 Do not flash firmware until the restore path is reviewed again.
