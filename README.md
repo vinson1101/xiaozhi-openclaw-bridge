@@ -1,12 +1,16 @@
 # xiaozhi-openclaw-bridge
 
-Xiaozhi voice terminal bridge for OpenClaw, Hermas, and Zebra-backed agents.
+Custom ESP32 voice terminal and bridge for OpenClaw, Hermas, and Zebra-backed agents.
 
 ## 0. Project Positioning
 
-This project turns a Xiaozhi ESP32 voice device into a thin voice terminal for remote agents.
+This project turns a Xiaozhi-style ESP32 voice device into a private voice terminal for remote agents.
 
-The board should handle wake/listen/play/display. The server should handle ASR, TTS, routing, agent execution, memory, tools, and audit.
+The target path does not depend on the official Xiaozhi cloud service. If needed, the board can be flashed with custom firmware.
+
+The board should handle wake/listen/play/display and only lightweight local context. The server should handle ASR, TTS, routing, agent execution, durable memory, tools, and audit.
+
+See [docs/DESIGN.md](docs/DESIGN.md) for the basic design.
 
 ## 1. Current Hardware Baseline
 
@@ -22,20 +26,21 @@ Observed board:
 - Display driver string observed: `ST7789`
 - Stock endpoint observed: `mqtt.xiaozhi.me`
 
-The ESP32-C3 is treated as a constrained endpoint, not as the agent runtime.
+The ESP32-C3 is treated as a constrained endpoint, not as the main agent runtime.
 
 ## 2. Target Architecture
 
 ```text
-Xiaozhi board
+Custom board firmware
   microphone / speaker / screen / buttons
-  voice capture and playback only
+  voice capture / playback / M5Stack-style status UI
         |
         v
 Voice bridge service
-  Xiaozhi protocol adapter
+  device protocol adapter
   ASR / TTS adapter
   auth and session routing
+  local session and memory layer
         |
         v
 Agent services
@@ -48,8 +53,9 @@ Agent services
 
 - Do not port Zebra into ESP32 firmware.
 - Do not vendor `memovai/mimiclaw` or `78/xiaozhi-esp32` source here by default.
+- Do not depend on the official Xiaozhi cloud path for the target product.
 - Keep OpenClaw, Hermas, and Zebra as server-side services.
-- Use the board as an input/output device.
+- Use the board as an input/output device with small local state.
 - Keep flash backups, credentials, API keys, and personal runtime data out of Git.
 
 ## 4. Zebra Migration Contract
@@ -69,9 +75,9 @@ Do not migrate Zebra's implementation into firmware.
 
 1. Text bridge: accept a text command and forward it to OpenClaw or Hermas.
 2. Agent adapter: normalize OpenClaw, Hermas, and Zebra session responses.
-3. Xiaozhi protocol research: identify the smallest compatible WebSocket/MQTT path.
-4. Voice loop: ASR command in, agent result out, TTS response back.
-5. Firmware path: only if required, build a custom `zuowei-c3-realtime-lcd` firmware with a unique board identity.
+3. Firmware backup: keep a restorable copy of the stock board flash.
+4. Custom firmware skeleton: WiFi, secure config, display states, bridge hello.
+5. Voice loop: ASR command in, agent result out, TTS response back.
 
 ## 6. References
 
