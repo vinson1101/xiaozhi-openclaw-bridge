@@ -12,6 +12,7 @@
 - Hardware recon exists in `docs/PHASE5_HARDWARE_RECON.md`.
 - Firmware skeleton exists in `docs/PHASE6_FIRMWARE_SKELETON.md`.
 - Firmware WiFi hello exists in `docs/PHASE6B_WIFI_HELLO.md`.
+- Firmware eye render commands exist in `docs/PHASE6C_EYE_RENDER.md`.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.
 - No firmware has been flashed for this project.
@@ -144,7 +145,8 @@ Tasks:
 - [ ] Implement provisioning write path: USB serial first, temporary AP later.
 - [ ] Implement ST7789 status screen.
 - [x] Implement avatar eye state model and blinking geometry.
-- [ ] Draw avatar eyes on ST7789.
+- [x] Render avatar eyes as ST7789-ready RGB565 rectangles.
+- [ ] Send avatar eye rectangles to ST7789 after LCD pins are confirmed.
 - [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
 
@@ -223,7 +225,7 @@ Acceptance:
 Start with Phase 6C:
 
 ```text
-wire avatar eye geometry to ST7789 drawing, still without flashing
+implement provisioning write path over USB serial, still without flashing
 ```
 
 Do not flash firmware until the restore path is reviewed again.

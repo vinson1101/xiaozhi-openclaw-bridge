@@ -15,6 +15,7 @@
 #include "nvs_flash.h"
 
 #include "eyes.h"
+#include "screen.h"
 
 static const char *TAG = "xob";
 static EventGroupHandle_t wifi_events;
@@ -191,7 +192,9 @@ void app_main(void) {
     ESP_LOGI(TAG, "device_token=%s", strlen(config.device_token) > 0 ? "configured" : "empty");
     ESP_LOGI(TAG, "wifi_ssid=%s", strlen(config.wifi_ssid) > 0 ? "configured" : "empty");
     xob_eyes_frame_t eyes = xob_eyes_frame(XOB_EYES_IDLE, 0);
+    xob_screen_frame_t screen = xob_screen_render_eyes(&eyes);
     ESP_LOGI(TAG, "eyes ready: %dx%d openness=%u", eyes.width, eyes.height, eyes.openness);
+    ESP_LOGI(TAG, "screen frame ready: rects=%u", screen.count);
     ESP_ERROR_CHECK(post_device_hello(&config));
-    ESP_LOGI(TAG, "next: ST7789 eyes and bridge state");
+    ESP_LOGI(TAG, "next: ST7789 panel driver and bridge state");
 }
