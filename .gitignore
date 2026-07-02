@@ -1,0 +1,18 @@
+# Secrets and local runtime data
+.env
+*.key
+*.pem
+*secret*
+*token*
+
+# Firmware/build outputs and board backups
+build/
+dist/
+*.bin
+*.elf
+*.map
+
+# Local scratch
+work/
+outputs/
+.DS_Store
