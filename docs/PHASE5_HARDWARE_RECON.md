@@ -13,15 +13,18 @@ Phase 5A uses the existing local flash backup. It does not read from the board a
 - Firmware contains modules or symbols for `AudioCodec`, `I2S1`, `Backlight`, `Battery`, buttons, and ADC.
 - ADC button/battery clues include `ADC_CHANNEL_4`.
 - OTA flow exists in stock firmware, including `ota_0`, `ota_1`, and `otadata`.
+- Sanitized boot log confirms stock version `1.6.1`, SKU `zuowei-c3-realtime-lcd`, running partition `ota_0`, and display/backlight init.
+- Boot log confirms three button GPIOs: 9, 8, and 7.
+- Battery ADC is `ADC_CHANNEL_4`, which maps to GPIO4 on ESP32-C3.
 
 ## Not Confirmed
 
 - Exact LCD pin map: SCLK, MOSI, CS, DC, reset, and backlight GPIO.
-- Exact button map beyond ADC/button support.
+- Exact button semantics for GPIO9, GPIO8, and GPIO7.
 - Exact microphone/speaker wiring and codec model.
 - Battery ADC divider and voltage calibration.
+- Exact role of GPIO21, GPIO0, and GPIO2.
 - Whether the current board exposes enough free GPIO for additional controls.
-- Boot log for the current physical board after the latest power cycles.
 
 ## Board Decision
 

@@ -25,6 +25,7 @@ Project documents:
 - [docs/PHASE6D_SERIAL_PROVISIONING.md](docs/PHASE6D_SERIAL_PROVISIONING.md): USB serial provisioning
 - [docs/PHASE6E_BUILD_VALIDATION.md](docs/PHASE6E_BUILD_VALIDATION.md): no-flash ESP-IDF build validation
 - [docs/PHASE6G_FIRST_FLASH_REVIEW.md](docs/PHASE6G_FIRST_FLASH_REVIEW.md): first-flash and restore review
+- [docs/PHASE6H_BOOT_PIN_RECON.md](docs/PHASE6H_BOOT_PIN_RECON.md): sanitized boot log and pin recon
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan

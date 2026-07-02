@@ -16,6 +16,7 @@
 - Firmware USB serial provisioning exists in `docs/PHASE6D_SERIAL_PROVISIONING.md`.
 - No-flash ESP-IDF build path exists in `docs/PHASE6E_BUILD_VALIDATION.md`.
 - First-flash and restore review exists in `docs/PHASE6G_FIRST_FLASH_REVIEW.md`.
+- Sanitized boot log and pin recon exists in `docs/PHASE6H_BOOT_PIN_RECON.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
 - No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xe22b0`, with 75% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
@@ -127,7 +128,7 @@ Tasks:
 - [x] Backup full 8 MB flash.
 - [x] Record partition table.
 - [x] Run static recon against the local flash backup.
-- [ ] Record boot log.
+- [x] Record boot log.
 - [x] Identify display init path at driver level.
 - [ ] Identify exact display, button, microphone, speaker/audio codec, and battery GPIO/pin map.
 - [x] Decide whether current ESP32-C3 board is enough for Phase 6 display/control.
@@ -231,10 +232,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6H:
+Start with Phase 6I:
 
 ```text
-flash only after explicit approval, or continue hardware pin-map recon
+do not hardcode LCD pins; obtain Zuowei pin map or prepare an explicitly approved LCD probe
 ```
 
 No firmware write should happen without explicit approval in the current session.
