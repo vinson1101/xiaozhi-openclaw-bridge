@@ -16,6 +16,7 @@ Project documents:
 - [docs/TECHNICAL_ROUTE.md](docs/TECHNICAL_ROUTE.md): technical route
 - [docs/PHASE0_HARDWARE.md](docs/PHASE0_HARDWARE.md): public hardware baseline
 - [docs/PHASE1_TEXT_BRIDGE.md](docs/PHASE1_TEXT_BRIDGE.md): text bridge MVP
+- [docs/PHASE2_OPENCLAW_ADAPTER.md](docs/PHASE2_OPENCLAW_ADAPTER.md): OpenClaw SSH adapter
 - [PLAN.md](PLAN.md): milestone plan
 
 ## 1. Current Hardware Baseline
@@ -79,11 +80,12 @@ Do not migrate Zebra's implementation into firmware.
 
 ## 5. First Milestones
 
-1. Text bridge: accept a text command and forward it to OpenClaw or Hermas.
-2. Agent adapter: normalize OpenClaw, Hermas, and Zebra session responses.
-3. Firmware backup: keep a restorable copy of the stock board flash.
-4. Custom firmware skeleton: WiFi, secure config, display states, bridge hello.
-5. Voice loop: ASR command in, agent result out, TTS response back.
+1. Text bridge: accept a text command and forward it to a backend.
+2. OpenClaw adapter: forward commands through a private SSH/CLI path.
+3. Agent adapter: normalize OpenClaw, Hermas, and Zebra session responses.
+4. Firmware backup: keep a restorable copy of the stock board flash.
+5. Custom firmware skeleton: WiFi, secure config, display states, bridge hello.
+6. Voice loop: ASR command in, agent result out, TTS response back.
 
 ## 6. References
 

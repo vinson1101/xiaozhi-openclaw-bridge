@@ -7,6 +7,7 @@
 - Basic design exists in `docs/DESIGN.md`.
 - Technical route exists in `docs/TECHNICAL_ROUTE.md`.
 - Text Bridge MVP exists in `docs/PHASE1_TEXT_BRIDGE.md`.
+- OpenClaw SSH adapter exists in `docs/PHASE2_OPENCLAW_ADAPTER.md`.
 - No firmware has been flashed for this project.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
@@ -34,7 +35,6 @@ Goal: prove that a command can reach an agent backend without touching firmware.
 
 Tasks:
 
-- [ ] Add minimal Python project skeleton.
 - [x] Add minimal Python project skeleton.
 - [x] Add `/healthz`.
 - [x] Add `POST /command`.
@@ -57,11 +57,12 @@ Goal: connect the Bridge to the real OpenClaw path.
 
 Tasks:
 
-- [ ] Identify the safest OpenClaw entrypoint: HTTP first, CLI fallback.
-- [ ] Implement `OpenClawAdapter`.
-- [ ] Normalize OpenClaw result into Bridge response.
-- [ ] Preserve `needs_approval` instead of auto-executing risky actions.
-- [ ] Add fake fixture test for OpenClaw response parsing.
+- [x] Identify the safest OpenClaw entrypoint: CLI through private SSH.
+- [x] Implement `OpenClawAdapter`.
+- [x] Normalize OpenClaw result into Bridge response.
+- [x] Preserve explicit command enablement instead of auto-executing by default.
+- [x] Add fake fixture test for OpenClaw response parsing.
+- [ ] Validate one live non-destructive `openclaw agent --json` call after operator policy is confirmed.
 
 Acceptance:
 
@@ -207,10 +208,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 1:
+Start with Phase 3 or Phase 4 depending on network access:
 
 ```text
-Text Bridge MVP
+Hermas adapter when office LAN is reachable, otherwise device protocol simulator.
 ```
 
 Do not start firmware work until Phase 1-4 pass and Phase 5 backup is complete.
