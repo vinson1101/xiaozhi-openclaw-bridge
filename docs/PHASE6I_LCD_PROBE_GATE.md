@@ -15,6 +15,7 @@ Checked:
 - Public discussion `#1483`: maintainer says a similar Zuowei C3 1.54 LCD board is likely not open-source.
 - Later user-provided LCD flex photo shows `GMT154-03`. Public GoldenMorning GMT154-family pages align with 1.54-inch 240x240 ST7789/SPI modules, but no exact `GMT154-03` board pin map was found.
 - Later user-provided back-side board photo shows `XHT-VB68Ai-4G` and date `2025-04-28`. Exact public searches for this marking did not find a schematic or source match.
+- External source review in `docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md` confirms nearby GoldenMorning GMT154 variants, but also rejects a third-party 12-pin table as direct proof for this board.
 
 ## Known Pins
 
@@ -54,4 +55,4 @@ If a probe is approved later, keep it narrow:
 
 ## Current Next Action
 
-Ask Zuowei for the board schematic/source, or provide explicit approval for a temporary LCD probe.
+Ask Zuowei/vendor for the board schematic/source using the observed identifiers (`zuowei-c3-realtime-lcd`, `XHT-VB68Ai-4G`, `GMT154-03`), perform continuity testing, or provide explicit approval for a temporary LCD probe.

@@ -20,6 +20,7 @@
 - LCD pin map search and probe gate exists in `docs/PHASE6I_LCD_PROBE_GATE.md`.
 - Open C3 reference board check exists in `docs/PHASE6J_OPEN_C3_REFERENCES.md`.
 - Photo-based hardware recon exists in `docs/PHASE6K_PHOTO_HARDWARE_RECON.md`.
+- External source review exists in `docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
 - No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xe22b0`, with 75% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
@@ -162,6 +163,7 @@ Tasks:
 - [x] Review first-flash command and restore checklist, without flashing.
 - [x] Search for Zuowei LCD pin map and define LCD probe gate, without flashing.
 - [x] Check open XiaoZhi C3 reference boards for reusable LCD pin clues.
+- [x] Review external GMT154/Zuowei source clues and reject unverified pinout tables.
 - [ ] Send avatar eye rectangles to ST7789 after LCD pins are confirmed.
 - [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.

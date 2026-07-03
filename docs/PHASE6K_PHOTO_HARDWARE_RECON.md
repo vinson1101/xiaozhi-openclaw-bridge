@@ -45,6 +45,7 @@ Public reference clues, not exact-match pin proof:
 - GoldenMorning `GMT154-01/GMT154-02`: 1.54-inch 240x240 ST7789T3, SPI, 15-pin.
 - GoldenMorning `GMT154-01M`: 1.54-inch 240x240 ST7789 module.
 - GoldenMorning `GMT154-8P`: 1.54-inch 240x240 ST7789V, 4-line SPI, 8-pin.
+- `docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md` rejects a third-party 12-pin table as direct pin proof for `GMT154-03`.
 
 ## What This Changes
 
