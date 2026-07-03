@@ -16,6 +16,7 @@ Visible board markings:
 | Crystal | `40.000 MHz` | Matches ESP32-C3 40 MHz crystal reported by `esptool`. |
 | Board silk | `MIC` | Confirms a microphone area/connector, but not the mic interface pin map. |
 | Board silk | `GND VCC DATA` | Confirms a 3-wire peripheral header/connector area, exact function not confirmed. |
+| Board silk | `GND RX TX 4G` | Confirms a UART/4G-labeled header area, exact use not confirmed. |
 
 Visible battery marking:
 
@@ -26,11 +27,21 @@ Visible battery marking:
 
 This is a single-cell LiPo pouch battery. The `103040` marking is consistent with a 10 x 30 x 40 mm class cell.
 
+Visible full-board layout:
+
+- Left edge has three physical side buttons, matching the three boot-log button GPIOs.
+- Top edge has separate small-wire connectors for battery/power, mic, and speaker/peripheral wiring.
+- Right edge has USB-C.
+- Bottom-right has the LCD FPC connector.
+- LCD traces fan out near the FPC connector, but the photo does not expose pin labels or a complete trace map.
+
 ## What This Changes
 
 - The 8 MB flash size is now confirmed by both software and photo evidence.
 - The audio output path likely uses a simple external speaker amplifier after the ESP32-C3 audio path.
 - Battery capacity can be documented as 1200 mAh.
+- The board has a real LCD FPC connector, but still no safe LCD GPIO map.
+- The three boot-log button GPIOs correspond to three visible side buttons.
 
 ## What Remains Unknown
 
@@ -39,6 +50,7 @@ This is a single-cell LiPo pouch battery. The `103040` marking is consistent wit
 - Speaker amp enable/shutdown pin, if any.
 - Battery divider ratio and charge/status pins.
 - Exact role of the `GND VCC DATA` header.
+- Exact role of the `GND RX TX 4G` header.
 
 ## Decision
 
