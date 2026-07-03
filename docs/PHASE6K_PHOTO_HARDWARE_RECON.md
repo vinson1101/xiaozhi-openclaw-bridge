@@ -18,6 +18,8 @@ Visible board markings:
 | Board silk | `GND VCC DATA` | Confirms a 3-wire peripheral header/connector area, exact function not confirmed. |
 | Board silk | `GND RX TX 4G` | Confirms a UART/4G-labeled header area, exact use not confirmed. |
 | LCD FPC | `GMT154-03` | Confirms a 1.54-inch-class LCD flex/module marking. Public GoldenMorning GMT154-family references align with 1.54-inch 240x240 ST7789/SPI, but not this exact `-03` pinout. |
+| Back-side PCB silk | `XHT-VB68Ai-4G` | Likely PCB model or internal board identifier; exact public schematic/source match not found. |
+| Back-side PCB date | `2025-04-28` | Likely PCB revision or manufacturing date marker. |
 
 Visible battery marking:
 
@@ -36,6 +38,7 @@ Visible full-board layout:
 - Bottom-right has the LCD FPC connector.
 - LCD traces fan out near the FPC connector, but the photo does not expose pin labels or a complete trace map.
 - The LCD flex marking reads `GMT154-03`; it is a module/flex identifier, not a pin label.
+- The back side has PCB marking `XHT-VB68Ai-4G` plus date `2025-04-28`.
 
 Public reference clues, not exact-match pin proof:
 
@@ -51,6 +54,7 @@ Public reference clues, not exact-match pin proof:
 - The board has a real LCD FPC connector, but still no safe LCD GPIO map.
 - The three boot-log button GPIOs correspond to three visible side buttons.
 - The LCD is likely a 1.54-inch-class ST7789/SPI TFT module, consistent with earlier public `zuowei-c3-realtime-lcd` references and GoldenMorning GMT154-family references.
+- The board now has a searchable PCB identifier, but exact public matches for `XHT-VB68Ai-4G` were not found.
 
 ## What Remains Unknown
 
@@ -61,6 +65,7 @@ Public reference clues, not exact-match pin proof:
 - Battery divider ratio and charge/status pins.
 - Exact role of the `GND VCC DATA` header.
 - Exact role of the `GND RX TX 4G` header.
+- Vendor meaning of `XHT-VB68Ai-4G`.
 
 ## Decision
 

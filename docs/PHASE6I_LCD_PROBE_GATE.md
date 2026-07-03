@@ -14,6 +14,7 @@ Checked:
 - Public issue `#1285`: confirms ESP32-C3 plus 1.54 TFT LCD, but no pin map.
 - Public discussion `#1483`: maintainer says a similar Zuowei C3 1.54 LCD board is likely not open-source.
 - Later user-provided LCD flex photo shows `GMT154-03`. Public GoldenMorning GMT154-family pages align with 1.54-inch 240x240 ST7789/SPI modules, but no exact `GMT154-03` board pin map was found.
+- Later user-provided back-side board photo shows `XHT-VB68Ai-4G` and date `2025-04-28`. Exact public searches for this marking did not find a schematic or source match.
 
 ## Known Pins
 
