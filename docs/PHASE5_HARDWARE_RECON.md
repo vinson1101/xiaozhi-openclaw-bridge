@@ -16,6 +16,8 @@ Phase 5A uses the existing local flash backup. It does not read from the board a
 - Sanitized boot log confirms stock version `1.6.1`, SKU `zuowei-c3-realtime-lcd`, running partition `ota_0`, and display/backlight init.
 - Boot log confirms three button GPIOs: 9, 8, and 7.
 - Battery ADC is `ADC_CHANNEL_4`, which maps to GPIO4 on ESP32-C3.
+- User-provided board photo confirms ESP32-C3, ZB25VQ64-series 64 Mbit flash, 8002-family audio amplifier, 40 MHz crystal, and a `MIC` silk label.
+- User-provided battery photo confirms a `103040` 3.7 V 1200 mAh LiPo pouch cell.
 
 ## Not Confirmed
 
@@ -23,6 +25,7 @@ Phase 5A uses the existing local flash backup. It does not read from the board a
 - Exact button semantics for GPIO9, GPIO8, and GPIO7.
 - Exact microphone/speaker wiring and codec model.
 - Battery ADC divider and voltage calibration.
+- Speaker amp enable/shutdown pin, if any.
 - Exact role of GPIO21, GPIO0, and GPIO2.
 - Whether the current board exposes enough free GPIO for additional controls.
 
