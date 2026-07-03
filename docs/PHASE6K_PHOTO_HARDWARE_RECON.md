@@ -17,6 +17,7 @@ Visible board markings:
 | Board silk | `MIC` | Confirms a microphone area/connector, but not the mic interface pin map. |
 | Board silk | `GND VCC DATA` | Confirms a 3-wire peripheral header/connector area, exact function not confirmed. |
 | Board silk | `GND RX TX 4G` | Confirms a UART/4G-labeled header area, exact use not confirmed. |
+| LCD FPC | `GMT154-03` | Confirms a 1.54-inch-class LCD flex/module marking. Public GoldenMorning GMT154-family references align with 1.54-inch 240x240 ST7789/SPI, but not this exact `-03` pinout. |
 
 Visible battery marking:
 
@@ -34,6 +35,13 @@ Visible full-board layout:
 - Right edge has USB-C.
 - Bottom-right has the LCD FPC connector.
 - LCD traces fan out near the FPC connector, but the photo does not expose pin labels or a complete trace map.
+- The LCD flex marking reads `GMT154-03`; it is a module/flex identifier, not a pin label.
+
+Public reference clues, not exact-match pin proof:
+
+- GoldenMorning `GMT154-01/GMT154-02`: 1.54-inch 240x240 ST7789T3, SPI, 15-pin.
+- GoldenMorning `GMT154-01M`: 1.54-inch 240x240 ST7789 module.
+- GoldenMorning `GMT154-8P`: 1.54-inch 240x240 ST7789V, 4-line SPI, 8-pin.
 
 ## What This Changes
 
@@ -42,10 +50,12 @@ Visible full-board layout:
 - Battery capacity can be documented as 1200 mAh.
 - The board has a real LCD FPC connector, but still no safe LCD GPIO map.
 - The three boot-log button GPIOs correspond to three visible side buttons.
+- The LCD is likely a 1.54-inch-class ST7789/SPI TFT module, consistent with earlier public `zuowei-c3-realtime-lcd` references and GoldenMorning GMT154-family references.
 
 ## What Remains Unknown
 
 - LCD SPI pins: SCLK, MOSI, CS, DC, reset, and backlight.
+- Exact pin assignment for `GMT154-03`.
 - Microphone type and pins.
 - Speaker amp enable/shutdown pin, if any.
 - Battery divider ratio and charge/status pins.

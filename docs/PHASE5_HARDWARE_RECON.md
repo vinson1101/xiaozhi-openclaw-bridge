@@ -19,10 +19,12 @@ Phase 5A uses the existing local flash backup. It does not read from the board a
 - User-provided board photo confirms ESP32-C3, ZB25VQ64-series 64 Mbit flash, 8002-family audio amplifier, 40 MHz crystal, and a `MIC` silk label.
 - User-provided battery photo confirms a `103040` 3.7 V 1200 mAh LiPo pouch cell.
 - User-provided full-board photo confirms three visible side buttons, a bottom-right LCD FPC connector, USB-C, and `GND RX TX 4G` header silk.
+- User-provided LCD flex photo shows `GMT154-03`, likely aligned with the GoldenMorning GMT154-family 1.54-inch 240x240 ST7789/SPI LCD flex/module references, but not a pin label.
 
 ## Not Confirmed
 
 - Exact LCD pin map: SCLK, MOSI, CS, DC, reset, and backlight GPIO.
+- Exact pin assignment for LCD flex marking `GMT154-03`.
 - Exact button semantics for GPIO9, GPIO8, and GPIO7.
 - Exact microphone/speaker wiring and codec model.
 - Battery ADC divider and voltage calibration.
