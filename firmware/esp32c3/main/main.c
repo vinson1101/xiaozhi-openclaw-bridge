@@ -15,6 +15,7 @@
 #include "nvs_flash.h"
 
 #include "eyes.h"
+#include "lcd.h"
 #include "provisioning.h"
 #include "screen.h"
 
@@ -197,6 +198,12 @@ void app_main(void) {
     xob_screen_frame_t screen = xob_screen_render_eyes(&eyes);
     ESP_LOGI(TAG, "eyes ready: %dx%d openness=%u", eyes.width, eyes.height, eyes.openness);
     ESP_LOGI(TAG, "screen frame ready: rects=%u", screen.count);
+    err = xob_lcd_init();
+    if (err == ESP_OK) {
+        ESP_ERROR_CHECK(xob_lcd_draw_frame(&screen));
+    } else {
+        ESP_LOGW(TAG, "LCD init skipped: %s", esp_err_to_name(err));
+    }
     ESP_ERROR_CHECK(post_device_hello(&config));
-    ESP_LOGI(TAG, "next: ST7789 panel driver and bridge state");
+    ESP_LOGI(TAG, "next: bridge state display updates");
 }

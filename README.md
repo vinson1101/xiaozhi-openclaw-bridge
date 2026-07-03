@@ -31,6 +31,7 @@ Project documents:
 - [docs/PHASE6K_PHOTO_HARDWARE_RECON.md](docs/PHASE6K_PHOTO_HARDWARE_RECON.md): photo-based hardware recon
 - [docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md](docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md): external hardware source review
 - [docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md](docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md): stock binary LCD pin recon
+- [docs/PHASE6N_LCD_DRIVER.md](docs/PHASE6N_LCD_DRIVER.md): ST7789 firmware driver
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan

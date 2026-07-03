@@ -29,9 +29,9 @@ Result:
 
 ```text
 Project build complete.
-xob_esp32c3.bin binary size 0xe22b0 bytes.
+xob_esp32c3.bin binary size 0xed8b0 bytes.
 Smallest app partition is 0x380000 bytes.
-0x29dd50 bytes (75%) free.
+0x292750 bytes (73%) free.
 ```
 
 ESP-IDF generates `firmware/esp32c3/sdkconfig` and `firmware/esp32c3/build/` locally. They are ignored and not committed.

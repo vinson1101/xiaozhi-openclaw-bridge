@@ -22,8 +22,9 @@
 - Photo-based hardware recon exists in `docs/PHASE6K_PHOTO_HARDWARE_RECON.md`.
 - External source review exists in `docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md`.
 - Stock binary LCD pin recon exists in `docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md`.
+- ST7789 LCD driver exists in `docs/PHASE6N_LCD_DRIVER.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
-- No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xe22b0`, with 75% of the smallest app partition free.
+- No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xed8b0`, with 73% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.
@@ -167,7 +168,8 @@ Tasks:
 - [x] Check open XiaoZhi C3 reference boards for reusable LCD pin clues.
 - [x] Review external GMT154/Zuowei source clues and reject unverified pinout tables.
 - [x] Infer stock LCD pin map from the local flash backup, without flashing.
-- [ ] Send avatar eye rectangles to ST7789 after LCD pins are confirmed.
+- [x] Send avatar eye rectangles to ST7789 after LCD pins are inferred.
+- [x] Validate ST7789 firmware build locally, without flashing.
 - [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
 
