@@ -56,10 +56,10 @@ Public reference clues, not exact-match pin proof:
 - The three boot-log button GPIOs correspond to three visible side buttons.
 - The LCD is likely a 1.54-inch-class ST7789/SPI TFT module, consistent with earlier public `zuowei-c3-realtime-lcd` references and GoldenMorning GMT154-family references.
 - The board now has a searchable PCB identifier, but exact public matches for `XHT-VB68Ai-4G` were not found.
+- Later stock binary recon infers the LCD GPIO map independently of photo evidence.
 
 ## What Remains Unknown
 
-- LCD SPI pins: SCLK, MOSI, CS, DC, reset, and backlight.
 - Exact pin assignment for `GMT154-03`.
 - Microphone type and pins.
 - Speaker amp enable/shutdown pin, if any.

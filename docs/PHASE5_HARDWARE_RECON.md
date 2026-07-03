@@ -21,10 +21,10 @@ Phase 5A uses the existing local flash backup. It does not read from the board a
 - User-provided full-board photo confirms three visible side buttons, a bottom-right LCD FPC connector, USB-C, and `GND RX TX 4G` header silk.
 - User-provided LCD flex photo shows `GMT154-03`, likely aligned with the GoldenMorning GMT154-family 1.54-inch 240x240 ST7789/SPI LCD flex/module references, but not a pin label.
 - User-provided back-side board photo shows PCB marking `XHT-VB68Ai-4G` and date `2025-04-28`.
+- Stock binary recon infers LCD pins: MOSI GPIO1, SCLK GPIO3, CS GPIO12, DC GPIO0, RESET GPIO2, backlight GPIO5.
 
 ## Not Confirmed
 
-- Exact LCD pin map: SCLK, MOSI, CS, DC, reset, and backlight GPIO.
 - Exact pin assignment for LCD flex marking `GMT154-03`.
 - Exact button semantics for GPIO9, GPIO8, and GPIO7.
 - Exact microphone/speaker wiring and codec model.

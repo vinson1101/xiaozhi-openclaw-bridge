@@ -30,6 +30,7 @@ Project documents:
 - [docs/PHASE6J_OPEN_C3_REFERENCES.md](docs/PHASE6J_OPEN_C3_REFERENCES.md): open C3 reference board check
 - [docs/PHASE6K_PHOTO_HARDWARE_RECON.md](docs/PHASE6K_PHOTO_HARDWARE_RECON.md): photo-based hardware recon
 - [docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md](docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md): external hardware source review
+- [docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md](docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md): stock binary LCD pin recon
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan
@@ -46,6 +47,7 @@ Observed board:
 - Stock firmware version: `1.6.1`
 - Board/firmware type: `zuowei-c3-realtime-lcd`
 - Display driver string observed: `ST7789`
+- High-confidence stock-binary LCD pin map: MOSI GPIO1, SCLK GPIO3, CS GPIO12, DC GPIO0, RESET GPIO2, backlight GPIO5
 - Stock endpoint observed: `mqtt.xiaozhi.me`
 
 The ESP32-C3 is treated as a constrained endpoint, not as the main agent runtime.

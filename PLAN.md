@@ -21,6 +21,7 @@
 - Open C3 reference board check exists in `docs/PHASE6J_OPEN_C3_REFERENCES.md`.
 - Photo-based hardware recon exists in `docs/PHASE6K_PHOTO_HARDWARE_RECON.md`.
 - External source review exists in `docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md`.
+- Stock binary LCD pin recon exists in `docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
 - No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xe22b0`, with 75% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
@@ -135,7 +136,8 @@ Tasks:
 - [x] Record boot log.
 - [x] Identify display init path at driver level.
 - [x] Record photo-visible MCU, flash, amplifier, and battery markings.
-- [ ] Identify exact display, button, microphone, speaker/audio codec, and battery GPIO/pin map.
+- [ ] Identify exact microphone, speaker/audio codec, and remaining battery/power GPIO/pin map.
+- [x] Infer LCD SPI, reset, and backlight pins from the stock binary.
 - [x] Decide whether current ESP32-C3 board is enough for Phase 6 display/control.
 
 Acceptance:
@@ -164,6 +166,7 @@ Tasks:
 - [x] Search for Zuowei LCD pin map and define LCD probe gate, without flashing.
 - [x] Check open XiaoZhi C3 reference boards for reusable LCD pin clues.
 - [x] Review external GMT154/Zuowei source clues and reject unverified pinout tables.
+- [x] Infer stock LCD pin map from the local flash backup, without flashing.
 - [ ] Send avatar eye rectangles to ST7789 after LCD pins are confirmed.
 - [x] Implement HTTP JSON `hello`.
 - [ ] Display Bridge connection state.
