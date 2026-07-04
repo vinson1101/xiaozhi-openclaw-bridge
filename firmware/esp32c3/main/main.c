@@ -176,6 +176,10 @@ static uint32_t ssid_hash(const uint8_t *ssid, size_t len) {
     return hash;
 }
 
+static uint32_t string_hash(const char *value) {
+    return ssid_hash((const uint8_t *)value, strlen(value));
+}
+
 static void log_target_scan_result(const char *target_ssid) {
     wifi_scan_config_t scan_config = {
         .show_hidden = true,
@@ -343,6 +347,22 @@ static bool bridge_http_endpoint(const char *bridge_url, bridge_endpoint_t *out)
         out->port = (uint16_t)port;
     }
     return len > 0;
+}
+
+static void log_safe_status(const app_config_t *config) {
+    bridge_endpoint_t endpoint = {0};
+    bool http = bridge_http_endpoint(config->bridge_url, &endpoint);
+    ESP_LOGI(TAG, "config: bridge_url=%s device_token=%s wifi_ssid=%s target=%s",
+             strlen(config->bridge_url) > 0 ? "configured" : "empty",
+             strlen(config->device_token) > 0 ? "configured" : "empty",
+             strlen(config->wifi_ssid) > 0 ? "configured" : "empty",
+             strlen(config->default_target) > 0 ? config->default_target : "fake");
+    if (http) {
+        ESP_LOGI(TAG, "bridge_endpoint: scheme=http port=%u host_hash=%08lx",
+                 endpoint.port, (unsigned long)string_hash(endpoint.host));
+    } else {
+        ESP_LOGI(TAG, "bridge_endpoint: scheme=unsupported port=0 host_hash=00000000");
+    }
 }
 
 static void log_network_diagnostics(const app_config_t *config) {
@@ -779,8 +799,15 @@ static esp_err_t probe_xiaozhi_websocket(const app_config_t *config) {
         }
     }
     if (strstr(response, " 101 ") == NULL) {
+        char status_line[96];
+        size_t status_len = strcspn(response, "\r\n");
+        if (status_len >= sizeof(status_line)) {
+            status_len = sizeof(status_line) - 1;
+        }
+        memcpy(status_line, response, status_len);
+        status_line[status_len] = '\0';
         close(sock);
-        ESP_LOGW(TAG, "websocket probe upgrade failed");
+        ESP_LOGW(TAG, "websocket probe upgrade failed: %s", status_line);
         return ESP_FAIL;
     }
 
@@ -838,6 +865,11 @@ static void serial_command_task(void *arg) {
             line[len] = '\0';
             if (strcmp(line, ":config") == 0 || strcmp(line, ":setup") == 0) {
                 enter_button_provisioning();
+                continue;
+            }
+            if (strcmp(line, ":status") == 0) {
+                log_safe_status(config);
+                len = 0;
                 continue;
             }
             if (strcmp(line, ":voice") == 0 || strcmp(line, ":audio") == 0) {

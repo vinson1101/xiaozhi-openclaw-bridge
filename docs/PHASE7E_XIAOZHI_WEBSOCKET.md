@@ -64,6 +64,15 @@ Firmware exposes a serial `:ws` probe for the same handshake. It supports the
 current plain `http://` Bridge URL path only; `wss://` is deferred until the
 firmware has a TLS WebSocket client path.
 
+Firmware also exposes `:status` as a safe diagnostic command. It reports only
+whether config values exist, the HTTP port, and a non-secret host hash. It does
+not print the raw Bridge URL, token, WiFi SSID, password, device id, or MAC.
+
+If `:ws` reports `HTTP/1.0 404 Not Found` or another non-101 status, WiFi and
+basic `/device/hello` can still be healthy. That failure means the configured
+public entrypoint does not currently route `/device/ws` to the WebSocket-capable
+Bridge service.
+
 ## Validation
 
 ```bash

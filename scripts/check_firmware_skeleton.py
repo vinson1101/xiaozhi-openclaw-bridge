@@ -34,7 +34,7 @@ def main() -> None:
     main_c = (FW / "main" / "main.c").read_text()
     for token in ["nvs_flash_init", "bridge_url", "device_token", "default_target", "wifi_ssid", "post_device_hello", "post_device_command", "post_device_audio_probe", "probe_xiaozhi_websocket", "audio_upload", "websocket", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "XOB_BUTTON_LISTEN_GPIO", "esp32c3"]:
         assert token in main_c or token in (FW / "sdkconfig.defaults").read_text(), f"missing {token}"
-    for token in ["driver/gpio.h", "driver/usb_serial_jtag.h", "GPIO_NUM_7", "GPIO_NUM_8", "GPIO_NUM_9", "button_task", "serial_command_task", ":config", ":setup", ":voice", ":audio", ":ws"]:
+    for token in ["driver/gpio.h", "driver/usb_serial_jtag.h", "GPIO_NUM_7", "GPIO_NUM_8", "GPIO_NUM_9", "button_task", "serial_command_task", ":config", ":setup", ":status", ":voice", ":audio", ":ws"]:
         assert token in main_c, f"missing {token}"
     assert "nvs_flash_erase" not in main_c, "firmware must not erase stock NVS automatically"
     eyes_c = (FW / "main" / "eyes.c").read_text()
