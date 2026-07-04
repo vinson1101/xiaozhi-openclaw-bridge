@@ -69,7 +69,8 @@ int main(void) {{
 
     xob_eyes_frame_t blink = xob_eyes_frame(XOB_EYES_IDLE, 5320);
     xob_screen_frame_t closed = xob_screen_render_eyes(&blink);
-    assert(closed.count == 4);
+    assert(closed.count > 4);
+    assert(closed.count <= XOB_SCREEN_MAX_RECTS);
     assert_rects_inside_screen(closed);
     assert_face_centered(closed);
 
@@ -79,6 +80,10 @@ int main(void) {{
     assert(shifted.count <= XOB_SCREEN_MAX_RECTS);
     assert_rects_inside_screen(shifted);
     assert_face_centered(shifted);
+
+    xob_screen_frame_t connected = xob_screen_render_avatar(&idle, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_PENDING);
+    assert(connected.count == open.count);
+    assert_rects_inside_screen(connected);
 
     return 0;
 }}

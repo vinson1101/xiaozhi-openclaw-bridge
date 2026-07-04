@@ -25,8 +25,18 @@ static const char *TAG = "xob";
 static EventGroupHandle_t wifi_events;
 static const int WIFI_CONNECTED_BIT = BIT0;
 static const int WIFI_FAIL_BIT = BIT1;
-static xob_eyes_frame_t last_avatar_eyes;
-static bool has_last_avatar_eyes;
+static volatile xob_eye_state_t avatar_eye_state = XOB_EYES_IDLE;
+static volatile xob_screen_status_t avatar_wifi_status = XOB_SCREEN_STATUS_OFF;
+static volatile xob_screen_status_t avatar_bridge_status = XOB_SCREEN_STATUS_OFF;
+
+typedef struct {
+    xob_eyes_frame_t eyes;
+    xob_screen_status_t wifi_status;
+    xob_screen_status_t bridge_status;
+} avatar_frame_t;
+
+static avatar_frame_t last_avatar_frame;
+static bool has_last_avatar_frame;
 
 typedef struct {
     char bridge_url[128];
@@ -189,8 +199,33 @@ static bool avatar_eyes_equal(const xob_eyes_frame_t *left, const xob_eyes_frame
            left->mouth_open == right->mouth_open;
 }
 
-static esp_err_t draw_avatar_frame(const xob_eyes_frame_t *eyes) {
-    xob_screen_frame_t screen = xob_screen_render_eyes(eyes);
+static bool avatar_frames_equal(const avatar_frame_t *left, const avatar_frame_t *right) {
+    return avatar_eyes_equal(&left->eyes, &right->eyes) &&
+           left->wifi_status == right->wifi_status &&
+           left->bridge_status == right->bridge_status;
+}
+
+static avatar_frame_t avatar_frame(uint32_t tick_ms) {
+    xob_eye_state_t state = avatar_eye_state;
+    return (avatar_frame_t){
+        .eyes = xob_eyes_frame(state, tick_ms),
+        .wifi_status = avatar_wifi_status,
+        .bridge_status = avatar_bridge_status,
+    };
+}
+
+static void set_avatar_state(
+    xob_eye_state_t eye_state,
+    xob_screen_status_t wifi_status,
+    xob_screen_status_t bridge_status
+) {
+    avatar_eye_state = eye_state;
+    avatar_wifi_status = wifi_status;
+    avatar_bridge_status = bridge_status;
+}
+
+static esp_err_t draw_avatar_frame(const avatar_frame_t *frame) {
+    xob_screen_frame_t screen = xob_screen_render_avatar(&frame->eyes, frame->wifi_status, frame->bridge_status);
     return xob_lcd_draw_frame(&screen);
 }
 
@@ -198,12 +233,12 @@ static void avatar_task(void *arg) {
     (void)arg;
     while (true) {
         uint32_t tick_ms = (uint32_t)(esp_timer_get_time() / 1000);
-        xob_eyes_frame_t eyes = xob_eyes_frame(XOB_EYES_IDLE, tick_ms);
-        if (!has_last_avatar_eyes || !avatar_eyes_equal(&last_avatar_eyes, &eyes)) {
-            esp_err_t err = draw_avatar_frame(&eyes);
+        avatar_frame_t frame = avatar_frame(tick_ms);
+        if (!has_last_avatar_frame || !avatar_frames_equal(&last_avatar_frame, &frame)) {
+            esp_err_t err = draw_avatar_frame(&frame);
             if (err == ESP_OK) {
-                last_avatar_eyes = eyes;
-                has_last_avatar_eyes = true;
+                last_avatar_frame = frame;
+                has_last_avatar_frame = true;
             } else {
                 ESP_LOGW(TAG, "avatar draw failed: %s", esp_err_to_name(err));
             }
@@ -213,16 +248,16 @@ static void avatar_task(void *arg) {
 }
 
 static void start_avatar_screen(void) {
-    xob_eyes_frame_t eyes = xob_eyes_frame(XOB_EYES_IDLE, 0);
-    xob_screen_frame_t screen = xob_screen_render_eyes(&eyes);
-    ESP_LOGI(TAG, "eyes ready: %dx%d openness=%u", eyes.width, eyes.height, eyes.openness);
+    avatar_frame_t frame = avatar_frame(0);
+    xob_screen_frame_t screen = xob_screen_render_avatar(&frame.eyes, frame.wifi_status, frame.bridge_status);
+    ESP_LOGI(TAG, "eyes ready: %dx%d openness=%u", frame.eyes.width, frame.eyes.height, frame.eyes.openness);
     ESP_LOGI(TAG, "screen frame ready: rects=%u", screen.count);
 
     esp_err_t err = xob_lcd_init();
     if (err == ESP_OK) {
         ESP_ERROR_CHECK(xob_lcd_draw_frame(&screen));
-        last_avatar_eyes = eyes;
-        has_last_avatar_eyes = true;
+        last_avatar_frame = frame;
+        has_last_avatar_frame = true;
         BaseType_t created = xTaskCreate(avatar_task, "xob_avatar", 4096, NULL, 2, NULL);
         if (created != pdPASS) {
             ESP_LOGW(TAG, "avatar task not started");
@@ -244,17 +279,26 @@ void app_main(void) {
 
     app_config_t config = {0};
     if (load_config(&config) != ESP_OK) {
+        set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_OFF);
         xob_run_serial_provisioning();
         return;
     }
+    set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_OFF);
     if (connect_wifi(&config) != ESP_OK) {
+        set_avatar_state(XOB_EYES_ERROR, XOB_SCREEN_STATUS_ERROR, XOB_SCREEN_STATUS_OFF);
         return;
     }
+    set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_PENDING);
 
     ESP_LOGI(TAG, "XOB firmware skeleton ready");
     ESP_LOGI(TAG, "bridge_url=%s", strlen(config.bridge_url) > 0 ? "configured" : "empty");
     ESP_LOGI(TAG, "device_token=%s", strlen(config.device_token) > 0 ? "configured" : "empty");
     ESP_LOGI(TAG, "wifi_ssid=%s", strlen(config.wifi_ssid) > 0 ? "configured" : "empty");
-    ESP_ERROR_CHECK(post_device_hello(&config));
-    ESP_LOGI(TAG, "next: bridge state display updates");
+    err = post_device_hello(&config);
+    if (err != ESP_OK) {
+        set_avatar_state(XOB_EYES_ERROR, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_ERROR);
+        return;
+    }
+    set_avatar_state(XOB_EYES_IDLE, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_OK);
+    ESP_LOGI(TAG, "Bridge hello complete");
 }

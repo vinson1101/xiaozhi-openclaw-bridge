@@ -32,6 +32,8 @@ Project documents:
 - [docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md](docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md): external hardware source review
 - [docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md](docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md): stock binary LCD pin recon
 - [docs/PHASE6N_LCD_DRIVER.md](docs/PHASE6N_LCD_DRIVER.md): ST7789 firmware driver
+- [docs/PHASE6O_FIRST_CUSTOM_FLASH.md](docs/PHASE6O_FIRST_CUSTOM_FLASH.md): first custom flash and avatar check
+- [docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md](docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md): WiFi and Bridge status display
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan

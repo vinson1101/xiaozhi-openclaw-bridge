@@ -32,14 +32,14 @@ def main() -> None:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED if not path.exists()]
     assert not missing, f"missing firmware files: {', '.join(missing)}"
     main_c = (FW / "main" / "main.c").read_text()
-    for token in ["nvs_flash_init", "bridge_url", "device_token", "wifi_ssid", "post_device_hello", "xob_eyes_frame", "xob_screen_render_eyes", "xob_run_serial_provisioning", "esp32c3"]:
+    for token in ["nvs_flash_init", "bridge_url", "device_token", "wifi_ssid", "post_device_hello", "xob_eyes_frame", "xob_screen_render_avatar", "xob_run_serial_provisioning", "esp32c3"]:
         assert token in main_c or token in (FW / "sdkconfig.defaults").read_text(), f"missing {token}"
     assert "nvs_flash_erase" not in main_c, "firmware must not erase stock NVS automatically"
     eyes_c = (FW / "main" / "eyes.c").read_text()
     for token in ["XOB_EYES_IDLE", "XOB_EYES_LISTENING", "XOB_EYES_THINKING", "XOB_EYES_SPEAKING", "XOB_EYES_ERROR"]:
         assert token in eyes_c, f"missing {token}"
     screen_c = (FW / "main" / "screen.c").read_text()
-    for token in ["XOB_SCREEN_WIDTH", "XOB_SCREEN_HEIGHT", "XOB_RGB565_WHITE", "XOB_RGB565_BLACK", "xob_screen_render_eyes"]:
+    for token in ["XOB_SCREEN_WIDTH", "XOB_SCREEN_HEIGHT", "XOB_RGB565_WHITE", "XOB_RGB565_BLACK", "xob_screen_render_avatar"]:
         assert token in screen_c or token in (FW / "main" / "screen.h").read_text(), f"missing {token}"
     provisioning_c = (FW / "main" / "provisioning.c").read_text()
     for token in ["NVS_READWRITE", "nvs_set_str", "nvs_commit", "bridge_url", "device_token", "wifi_ssid", "wifi_password", "esp_restart"]:

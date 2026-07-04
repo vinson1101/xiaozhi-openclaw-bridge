@@ -23,12 +23,14 @@
 - External source review exists in `docs/PHASE6L_EXTERNAL_SOURCE_REVIEW.md`.
 - Stock binary LCD pin recon exists in `docs/PHASE6M_STOCK_BINARY_LCD_PIN_RECON.md`.
 - ST7789 LCD driver exists in `docs/PHASE6N_LCD_DRIVER.md`.
+- First custom firmware flash and avatar check exists in `docs/PHASE6O_FIRST_CUSTOM_FLASH.md`.
+- WiFi and Bridge status display exists in `docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
-- No-flash ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xed8d0`, with 73% of the smallest app partition free.
+- ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xee410`, with 73% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.
-- No firmware has been flashed for this project.
+- Custom firmware has been flashed once with the reviewed non-erase path; the stock full-flash backup remains local and ignored by Git.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 
 ## Phase 0 - Design And Safety Baseline
@@ -171,7 +173,8 @@ Tasks:
 - [x] Send avatar eye rectangles to ST7789 after LCD pins are inferred.
 - [x] Validate ST7789 firmware build locally, without flashing.
 - [x] Implement HTTP JSON `hello`.
-- [ ] Display Bridge connection state.
+- [x] Display Bridge connection state.
+- [ ] Provision WiFi/Bridge config on the flashed board and validate one real `/device/hello` against a local Bridge.
 
 Acceptance:
 
@@ -245,10 +248,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6L:
+Start with Phase 4B / Phase 6Q:
 
 ```text
-continue without LCD pins: implement server-side/device protocol work, or get explicit approval for temporary LCD probe firmware
+implement durable device pairing in SQLite, then provision the board against a local Bridge and validate a real /device/hello
 ```
 
-No firmware write should happen without explicit approval in the current session.
+Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

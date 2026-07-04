@@ -1,6 +1,6 @@
 # Phase 6N LCD Driver
 
-Phase 6N wires the inferred LCD pin map into the ESP32-C3 firmware. It builds locally but does not flash the board.
+Phase 6N wires the inferred LCD pin map into the ESP32-C3 firmware. This phase originally stopped at local build validation; later hardware flashing and visual validation are recorded in `docs/PHASE6O_FIRST_CUSTOM_FLASH.md`.
 
 ## Implementation
 
@@ -59,6 +59,4 @@ Smallest app partition is 0x380000 bytes
 
 ## Safety Status
 
-No firmware was flashed.
-
-The next hardware validation still requires explicit user approval. The reviewed flash path remains `docs/PHASE6G_FIRST_FLASH_REVIEW.md`.
+The reviewed flash path remains `docs/PHASE6G_FIRST_FLASH_REVIEW.md`. Later non-erase hardware validation is recorded in `docs/PHASE6O_FIRST_CUSTOM_FLASH.md`.

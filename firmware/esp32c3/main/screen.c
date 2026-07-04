@@ -2,6 +2,10 @@
 
 #define XOB_RGB565_BLACK 0x0000
 #define XOB_RGB565_WHITE 0xffff
+#define XOB_RGB565_DIM 0x4208
+#define XOB_RGB565_AMBER 0xfd20
+#define XOB_RGB565_GREEN 0x07e0
+#define XOB_RGB565_RED 0xf800
 
 #define XOB_EYE_BAND_HEIGHT 2
 
@@ -100,11 +104,48 @@ static void add_mouth(xob_screen_frame_t *frame, const xob_eyes_frame_t *eyes) {
     int16_t w = (int16_t)(48 + (eyes->mouth_open * 12) / 255);
     int16_t h = (int16_t)(3 + (eyes->mouth_open * 7) / 255);
     int16_t x = (int16_t)((XOB_SCREEN_WIDTH - w) / 2);
-    int16_t y = (int16_t)(eyes->y + eyes->height + 22 - h / 2);
+    int16_t y = (int16_t)(eyes->y + eyes->height + 28 - h / 2);
     add_rect(frame, x, y, w, h, XOB_RGB565_WHITE);
 }
 
-xob_screen_frame_t xob_screen_render_eyes(const xob_eyes_frame_t *eyes) {
+static uint16_t status_color(xob_screen_status_t status) {
+    switch (status) {
+        case XOB_SCREEN_STATUS_PENDING:
+            return XOB_RGB565_AMBER;
+        case XOB_SCREEN_STATUS_OK:
+            return XOB_RGB565_GREEN;
+        case XOB_SCREEN_STATUS_ERROR:
+            return XOB_RGB565_RED;
+        case XOB_SCREEN_STATUS_OFF:
+        default:
+            return XOB_RGB565_DIM;
+    }
+}
+
+static void add_wifi_status(xob_screen_frame_t *frame, int16_t x, int16_t y, xob_screen_status_t status) {
+    uint16_t color = status_color(status);
+    add_rect(frame, x, (int16_t)(y + 8), 4, 4, color);
+    add_rect(frame, (int16_t)(x + 7), (int16_t)(y + 4), 4, 8, color);
+    add_rect(frame, (int16_t)(x + 14), y, 4, 12, color);
+}
+
+static void add_bridge_status(xob_screen_frame_t *frame, int16_t x, int16_t y, xob_screen_status_t status) {
+    uint16_t color = status_color(status);
+    add_rect(frame, x, (int16_t)(y + 2), 10, 4, color);
+    add_rect(frame, (int16_t)(x + 14), (int16_t)(y + 2), 10, 4, color);
+    add_rect(frame, (int16_t)(x + 8), (int16_t)(y + 5), 8, 3, color);
+}
+
+static void add_status_row(xob_screen_frame_t *frame, xob_screen_status_t wifi_status, xob_screen_status_t bridge_status) {
+    add_wifi_status(frame, 92, 214, wifi_status);
+    add_bridge_status(frame, 126, 216, bridge_status);
+}
+
+xob_screen_frame_t xob_screen_render_avatar(
+    const xob_eyes_frame_t *eyes,
+    xob_screen_status_t wifi_status,
+    xob_screen_status_t bridge_status
+) {
     xob_screen_frame_t frame = {0};
     if (eyes == 0) {
         return frame;
@@ -114,5 +155,10 @@ xob_screen_frame_t xob_screen_render_eyes(const xob_eyes_frame_t *eyes) {
     add_eye(&frame, eyes, eyes->left_x);
     add_eye(&frame, eyes, eyes->right_x);
     add_mouth(&frame, eyes);
+    add_status_row(&frame, wifi_status, bridge_status);
     return frame;
+}
+
+xob_screen_frame_t xob_screen_render_eyes(const xob_eyes_frame_t *eyes) {
+    return xob_screen_render_avatar(eyes, XOB_SCREEN_STATUS_OFF, XOB_SCREEN_STATUS_OFF);
 }
