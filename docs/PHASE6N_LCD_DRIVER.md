@@ -15,6 +15,7 @@ The driver:
 - initializes the ST7789 panel through `esp_lcd`,
 - enables PWM backlight,
 - draws the existing eye-render rectangles to the display.
+- draws the boot eye frame before WiFi/Bridge provisioning, so an unprovisioned device still exercises the LCD.
 
 ## Board Profile
 
@@ -51,9 +52,9 @@ python3 scripts/check_flash_backup.py
 Build result after adding the LCD driver:
 
 ```text
-xob_esp32c3.bin binary size 0xed8b0 bytes
+xob_esp32c3.bin binary size 0xed8d0 bytes
 Smallest app partition is 0x380000 bytes
-0x292750 bytes (73%) free
+0x292730 bytes (73%) free
 ```
 
 ## Safety Status

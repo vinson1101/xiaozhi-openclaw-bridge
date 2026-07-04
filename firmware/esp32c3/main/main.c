@@ -173,6 +173,20 @@ static esp_err_t post_device_hello(const app_config_t *config) {
     return (status >= 200 && status < 300) ? ESP_OK : ESP_FAIL;
 }
 
+static void draw_boot_screen(void) {
+    xob_eyes_frame_t eyes = xob_eyes_frame(XOB_EYES_IDLE, 0);
+    xob_screen_frame_t screen = xob_screen_render_eyes(&eyes);
+    ESP_LOGI(TAG, "eyes ready: %dx%d openness=%u", eyes.width, eyes.height, eyes.openness);
+    ESP_LOGI(TAG, "screen frame ready: rects=%u", screen.count);
+
+    esp_err_t err = xob_lcd_init();
+    if (err == ESP_OK) {
+        ESP_ERROR_CHECK(xob_lcd_draw_frame(&screen));
+    } else {
+        ESP_LOGW(TAG, "LCD init skipped: %s", esp_err_to_name(err));
+    }
+}
+
 void app_main(void) {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -180,6 +194,8 @@ void app_main(void) {
         return;
     }
     ESP_ERROR_CHECK(err);
+
+    draw_boot_screen();
 
     app_config_t config = {0};
     if (load_config(&config) != ESP_OK) {
@@ -194,16 +210,6 @@ void app_main(void) {
     ESP_LOGI(TAG, "bridge_url=%s", strlen(config.bridge_url) > 0 ? "configured" : "empty");
     ESP_LOGI(TAG, "device_token=%s", strlen(config.device_token) > 0 ? "configured" : "empty");
     ESP_LOGI(TAG, "wifi_ssid=%s", strlen(config.wifi_ssid) > 0 ? "configured" : "empty");
-    xob_eyes_frame_t eyes = xob_eyes_frame(XOB_EYES_IDLE, 0);
-    xob_screen_frame_t screen = xob_screen_render_eyes(&eyes);
-    ESP_LOGI(TAG, "eyes ready: %dx%d openness=%u", eyes.width, eyes.height, eyes.openness);
-    ESP_LOGI(TAG, "screen frame ready: rects=%u", screen.count);
-    err = xob_lcd_init();
-    if (err == ESP_OK) {
-        ESP_ERROR_CHECK(xob_lcd_draw_frame(&screen));
-    } else {
-        ESP_LOGW(TAG, "LCD init skipped: %s", esp_err_to_name(err));
-    }
     ESP_ERROR_CHECK(post_device_hello(&config));
     ESP_LOGI(TAG, "next: bridge state display updates");
 }
