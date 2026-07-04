@@ -9,6 +9,7 @@ This slice proves the device-to-bridge path before firmware work.
 - simulator smoke test
 - event trail in the existing SQLite `session_events` table
 - durable pairing in the SQLite `device_pairings` table
+- reconnect by sending the previous `session_id` in the next `hello`
 
 WebSocket is intentionally deferred until the firmware protocol needs it. The current project has no WebSocket dependency, and HTTP JSON is enough to validate routing.
 
@@ -66,7 +67,6 @@ smoke_device_http ok
 ## Deferred
 
 - WebSocket `/device`
-- reconnect semantics
 - binary audio frames
 
 Add these when firmware starts consuming the protocol.

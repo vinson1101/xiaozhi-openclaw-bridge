@@ -43,6 +43,19 @@ def main() -> None:
                 )
                 assert hello["state"] == "ready"
                 assert hello["paired"] is True
+                reconnect = _post_json(
+                    f"{base}/device/hello",
+                    {
+                        "device_id": hello["device_id"],
+                        "session_id": hello["session_id"],
+                        "name": "simulator",
+                        "firmware": "simulator",
+                        "capabilities": ["display", "text"],
+                    },
+                    token=token,
+                )
+                assert reconnect["state"] == "ready"
+                assert reconnect["session_id"] == hello["session_id"]
                 missing_auth = _post_json_expect_error(
                     f"{base}/device/command",
                     {
@@ -87,6 +100,7 @@ def main() -> None:
                     (hello["session_id"],),
                 ).fetchall()
             assert [row[0] for row in rows] == [
+                "device.hello",
                 "device.hello",
                 "command.received",
                 "backend.response",

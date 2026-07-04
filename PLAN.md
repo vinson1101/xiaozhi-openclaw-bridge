@@ -45,6 +45,7 @@
 - Nginx reverse proxy sample exists in `deploy/nginx/xob-bridge.conf`.
 - Deployment service requires device tokens for pairing.
 - Offline device token rotation helper exists in `scripts/rotate_device_credential.py`.
+- Device HTTP simulator validates reconnect with the existing session id.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -132,7 +133,7 @@ Tasks:
 - [x] Implement HTTP `hello` and `command.text`.
 - [x] Add simulator script.
 - [x] Store device pairing in SQLite.
-- [ ] Add reconnect behavior to simulator.
+- [x] Add reconnect behavior to simulator.
 
 Acceptance:
 
