@@ -118,9 +118,10 @@ esp_err_t xob_lcd_init(void) {
 
 static esp_err_t draw_rect(const xob_screen_rect_t *rect) {
     static uint16_t line[XOB_SCREEN_WIDTH];
+    uint16_t color = (uint16_t)((rect->color << 8) | (rect->color >> 8));
 
     for (int16_t x = 0; x < rect->w; ++x) {
-        line[x] = rect->color;
+        line[x] = color;
     }
     for (int16_t y = 0; y < rect->h; ++y) {
         ESP_RETURN_ON_ERROR(
