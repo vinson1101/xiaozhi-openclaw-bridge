@@ -160,7 +160,7 @@ Tasks:
 - [x] Implement WiFi config.
 - [x] Implement NVS config read path for Bridge URL and token.
 - [x] Implement provisioning write path: USB serial first, temporary AP later.
-- [ ] Implement ST7789 status screen.
+- [x] Implement ST7789 status screen.
 - [x] Implement avatar eye state model and blinking geometry.
 - [x] Render avatar eyes as ST7789-ready RGB565 rectangles.
 - [x] Add no-flash ESP-IDF build script.
