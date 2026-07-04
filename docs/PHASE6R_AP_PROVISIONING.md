@@ -20,9 +20,11 @@ The setup page accepts:
 - `wifi_ssid`
 - `wifi_password`
 
-`bridge_url` and `wifi_ssid` are required. `device_token`, `default_target`,
-and `wifi_password` may be empty for local development or open WiFi. Empty
-`default_target` falls back to `fake`.
+`bridge_url` and `wifi_ssid` are required unless an existing value is already
+stored in `xob` NVS. Empty form fields keep existing non-empty values, so the
+setup page can change only the Bridge URL without retyping the WiFi password.
+`device_token`, `default_target`, and `wifi_password` may be empty for first-time
+local development or open WiFi. Empty `default_target` falls back to `fake`.
 
 On save, the firmware writes only the existing `xob` NVS namespace and reboots.
 The AP server runs alongside the existing USB serial provisioning loop, so the

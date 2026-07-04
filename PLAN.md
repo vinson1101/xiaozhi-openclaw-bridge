@@ -50,6 +50,7 @@
 - ASR provider boundary exists with a local fake provider.
 - TTS provider boundary exists with cacheable fixed prompts and a local fake WAV provider.
 - Recognized text can be routed through the existing Bridge command handler.
+- Firmware provisioning can keep existing non-empty values when fields are left blank.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -200,6 +201,7 @@ Tasks:
 - [x] Add USB serial text command to `POST /device/command`.
 - [x] Send configured `default_target` with board-side text commands.
 - [x] Add serial escape from text command mode into AP/serial provisioning.
+- [x] Allow provisioning to update only changed fields while keeping existing WiFi credentials.
 - [ ] Validate one real `/device/hello` against a reachable Bridge.
 
 Acceptance:

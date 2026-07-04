@@ -13,6 +13,9 @@ Phase 6D adds the first config write path for custom firmware.
 - Values are written only to NVS namespace `xob`.
 - `bridge_url` and `wifi_ssid` are required.
 - `device_token` and `wifi_password` may be empty.
+- When existing `xob` config is present, pressing Enter keeps the old
+  non-empty value. This allows changing only `bridge_url` without retyping the
+  WiFi password.
 - Firmware reboots after a successful write.
 
 The firmware does not print the entered values.
@@ -24,8 +27,10 @@ Open the ESP32-C3 serial console and enter values when prompted:
 ```text
 XOB provisioning over USB serial
 Values are stored in NVS namespace 'xob'. device_token and wifi_password may be empty.
+Press Enter to keep an existing non-empty value.
 bridge_url: http://<bridge-host>:<port>
 device_token:
+default_target (empty=keep/fake):
 wifi_ssid: <ssid>
 wifi_password:
 ```

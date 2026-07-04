@@ -79,6 +79,9 @@ failure.
 - Match scanned SSIDs by exact length and bytes, then log only safe hashes and aggregate match data.
 - Use all-channel station scan/connect settings so band steering and multiple APs are less likely to pick the wrong candidate.
 - Add board-side network diagnostics for DHCP details plus gateway, internet, and Bridge-host ping.
+- Allow serial and AP provisioning to keep existing non-empty `xob` values when
+  a field is submitted empty. This lets Bridge URL changes avoid retyping the
+  WiFi password.
 
 ## Next
 

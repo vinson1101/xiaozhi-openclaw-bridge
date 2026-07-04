@@ -23,8 +23,43 @@ static esp_netif_t *ap_netif;
 static httpd_handle_t ap_server;
 static bool usb_serial_ready;
 
+typedef struct {
+    char bridge_url[129];
+    char device_token[65];
+    char default_target[16];
+    char wifi_ssid[34];
+    char wifi_password[66];
+} provisioning_config_t;
+
 static esp_err_t ok_if_already_done(esp_err_t err) {
     return err == ESP_ERR_INVALID_STATE ? ESP_OK : err;
+}
+
+static void read_existing_string(nvs_handle_t nvs, const char *key, char *out, size_t out_len) {
+    size_t required = out_len;
+    if (nvs_get_str(nvs, key, out, &required) != ESP_OK && out_len > 0) {
+        out[0] = '\0';
+    }
+}
+
+static void load_existing_config(provisioning_config_t *config) {
+    memset(config, 0, sizeof(*config));
+    nvs_handle_t nvs;
+    if (nvs_open("xob", NVS_READONLY, &nvs) != ESP_OK) {
+        return;
+    }
+    read_existing_string(nvs, "bridge_url", config->bridge_url, sizeof(config->bridge_url));
+    read_existing_string(nvs, "device_token", config->device_token, sizeof(config->device_token));
+    read_existing_string(nvs, "default_target", config->default_target, sizeof(config->default_target));
+    read_existing_string(nvs, "wifi_ssid", config->wifi_ssid, sizeof(config->wifi_ssid));
+    read_existing_string(nvs, "wifi_password", config->wifi_password, sizeof(config->wifi_password));
+    nvs_close(nvs);
+}
+
+static void keep_existing_if_empty(char *value, size_t value_len, const char *existing) {
+    if (strlen(value) == 0 && strlen(existing) > 0) {
+        strlcpy(value, existing, value_len);
+    }
 }
 
 static esp_err_t ensure_usb_serial(void) {
@@ -167,10 +202,10 @@ static esp_err_t send_setup_page(httpd_req_t *req) {
         "<title>XOB Setup</title></head><body>"
         "<h1>XOB Setup</h1>"
         "<form method=\"post\" action=\"/save\">"
-        "<p><label>Bridge URL<br><input name=\"bridge_url\" required maxlength=\"128\" placeholder=\"http://192.168.4.2:8788\"></label></p>"
+        "<p><label>Bridge URL<br><input name=\"bridge_url\" maxlength=\"128\" placeholder=\"http://192.168.4.2:8788\"></label></p>"
         "<p><label>Device token<br><input name=\"device_token\" maxlength=\"64\"></label></p>"
         "<p><label>Default target<br><select name=\"default_target\"><option value=\"fake\">fake</option><option value=\"openclaw\">openclaw</option></select></label></p>"
-        "<p><label>WiFi SSID<br><input name=\"wifi_ssid\" required maxlength=\"32\"></label></p>"
+        "<p><label>WiFi SSID<br><input name=\"wifi_ssid\" maxlength=\"32\"></label></p>"
         "<p><label>WiFi password<br><input name=\"wifi_password\" type=\"password\" maxlength=\"64\"></label></p>"
         "<p><button type=\"submit\">Save and reboot</button></p>"
         "</form></body></html>";
@@ -205,7 +240,10 @@ static esp_err_t save_setup(httpd_req_t *req) {
     char default_target[16];
     char wifi_ssid[34];
     char wifi_password[66];
-    esp_err_t err = form_value(body, "bridge_url", bridge_url, sizeof(bridge_url));
+    provisioning_config_t existing;
+    load_existing_config(&existing);
+
+    esp_err_t err = optional_form_value(body, "bridge_url", bridge_url, sizeof(bridge_url));
     if (err == ESP_OK) {
         err = optional_form_value(body, "device_token", device_token, sizeof(device_token));
     }
@@ -213,11 +251,16 @@ static esp_err_t save_setup(httpd_req_t *req) {
         err = optional_form_value(body, "default_target", default_target, sizeof(default_target));
     }
     if (err == ESP_OK) {
-        err = form_value(body, "wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
+        err = optional_form_value(body, "wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
     }
     if (err == ESP_OK) {
         err = optional_form_value(body, "wifi_password", wifi_password, sizeof(wifi_password));
     }
+    keep_existing_if_empty(bridge_url, sizeof(bridge_url), existing.bridge_url);
+    keep_existing_if_empty(device_token, sizeof(device_token), existing.device_token);
+    keep_existing_if_empty(default_target, sizeof(default_target), existing.default_target);
+    keep_existing_if_empty(wifi_ssid, sizeof(wifi_ssid), existing.wifi_ssid);
+    keep_existing_if_empty(wifi_password, sizeof(wifi_password), existing.wifi_password);
     if (err != ESP_OK || strlen(bridge_url) == 0 || strlen(wifi_ssid) == 0) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid form");
     }
@@ -341,33 +384,38 @@ void xob_start_ap_provisioning(void) {
 }
 
 void xob_run_serial_provisioning(void) {
-    char bridge_url[129];
-    char device_token[65];
-    char default_target[16];
-    char wifi_ssid[34];
-    char wifi_password[66];
+    provisioning_config_t input;
+    provisioning_config_t existing;
 
     while (true) {
+        load_existing_config(&existing);
         puts("");
         puts("XOB provisioning over USB serial");
         puts("Values are stored in NVS namespace 'xob'. device_token and wifi_password may be empty.");
+        puts("Press Enter to keep an existing non-empty value.");
 
-        if (!read_line("bridge_url", bridge_url, sizeof(bridge_url)) ||
-            !read_line("device_token", device_token, sizeof(device_token)) ||
-            !read_line("default_target (empty=fake)", default_target, sizeof(default_target)) ||
-            !read_line("wifi_ssid", wifi_ssid, sizeof(wifi_ssid)) ||
-            !read_line("wifi_password", wifi_password, sizeof(wifi_password))) {
+        if (!read_line("bridge_url", input.bridge_url, sizeof(input.bridge_url)) ||
+            !read_line("device_token", input.device_token, sizeof(input.device_token)) ||
+            !read_line("default_target (empty=keep/fake)", input.default_target, sizeof(input.default_target)) ||
+            !read_line("wifi_ssid", input.wifi_ssid, sizeof(input.wifi_ssid)) ||
+            !read_line("wifi_password", input.wifi_password, sizeof(input.wifi_password))) {
             ESP_LOGW(TAG, "serial input ended; retrying");
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        if (strlen(bridge_url) == 0 || strlen(wifi_ssid) == 0) {
+        keep_existing_if_empty(input.bridge_url, sizeof(input.bridge_url), existing.bridge_url);
+        keep_existing_if_empty(input.device_token, sizeof(input.device_token), existing.device_token);
+        keep_existing_if_empty(input.default_target, sizeof(input.default_target), existing.default_target);
+        keep_existing_if_empty(input.wifi_ssid, sizeof(input.wifi_ssid), existing.wifi_ssid);
+        keep_existing_if_empty(input.wifi_password, sizeof(input.wifi_password), existing.wifi_password);
+
+        if (strlen(input.bridge_url) == 0 || strlen(input.wifi_ssid) == 0) {
             ESP_LOGW(TAG, "bridge_url and wifi_ssid are required; retrying");
             continue;
         }
 
-        esp_err_t err = write_config(bridge_url, device_token, default_target, wifi_ssid, wifi_password);
+        esp_err_t err = write_config(input.bridge_url, input.device_token, input.default_target, input.wifi_ssid, input.wifi_password);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "failed to write xob config: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(1000));
