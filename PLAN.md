@@ -52,6 +52,8 @@
 - Recognized text can be routed through the existing Bridge command handler.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
 - Deployment units disable the generic `/command` route for public device hosts.
+- Real board `/device/hello` is validated against a reachable token-protected VPS Bridge.
+- Real board serial text command reaches `/device/command` on the reachable Bridge.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -203,7 +205,7 @@ Tasks:
 - [x] Send configured `default_target` with board-side text commands.
 - [x] Add serial escape from text command mode into AP/serial provisioning.
 - [x] Allow provisioning to update only changed fields while keeping existing WiFi credentials.
-- [ ] Validate one real `/device/hello` against a reachable Bridge.
+- [x] Validate one real `/device/hello` against a reachable Bridge.
 
 Acceptance:
 
@@ -279,13 +281,8 @@ Acceptance:
 
 ## Next Task
 
-Continue Phase 6Q after making a Bridge reachable from the board:
-
-```text
-provision the board against a local Bridge and validate a real /device/hello
-```
-
-If the board is available, flash the Phase 6R firmware and validate the AP setup
-page before continuing Phase 6Q hello validation.
+Continue Phase 7 voice-loop work against the reachable Bridge host. The current
+Mac LAN path remains blocked by WiFi client-to-client reachability, so do not use
+the Mac LAN address as the board Bridge target unless router isolation changes.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

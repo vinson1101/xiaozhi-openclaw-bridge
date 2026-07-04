@@ -45,15 +45,15 @@ Typing `:config` or `:setup` in serial text command mode enters AP plus serial
 provisioning. This keeps configuration reachable while physical button mapping
 is still being verified.
 
-## Known Blocker
+## Reachability
 
-On the current home WiFi, the board still cannot reach the Mac Bridge host, so
-real command success needs a reachable Bridge host first.
+On the current home WiFi, the board still cannot reach the Mac Bridge host.
+Using the reachable VPS Bridge resolves the path for real device commands.
 
 ## Board Check
 
-This firmware was flashed with the reviewed non-erase write path. Sanitized
-serial evidence showed:
+This firmware was flashed with the reviewed non-erase write path. Before the
+reachable Bridge was available, sanitized serial evidence showed:
 
 ```text
 XOB serial text command ready. Type text and press Enter.
@@ -61,4 +61,12 @@ device command failed: ESP_ERR_HTTP_CONNECT
 ```
 
 That proves the board-side serial input task can trigger `/device/command`.
-The failure is the known Bridge reachability issue, not command-task startup.
+The failure was the Mac Bridge reachability issue, not command-task startup.
+
+After provisioning the board to the reachable Bridge host, sanitized evidence
+showed:
+
+```text
+device command status=200
+POST /device/command -> 200
+```

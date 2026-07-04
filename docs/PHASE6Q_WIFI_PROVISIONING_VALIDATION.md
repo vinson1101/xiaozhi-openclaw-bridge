@@ -10,8 +10,9 @@ The initial failure was caused by a provisioned SSID typo, not by 2.4 GHz
 visibility. The board scanned the expected 2.4 GHz network under the corrected
 SSID spelling, then connected successfully after reprovisioning.
 
-The real `/device/hello` is not validated yet because the board cannot open a
-TCP connection to the Bridge process running on the Mac LAN address.
+The real `/device/hello` is validated against a reachable VPS Bridge. The board
+still cannot open a TCP connection to the Bridge process running on the Mac LAN
+address because the current WiFi network blocks client-to-client reachability.
 
 Sanitized serial evidence:
 
@@ -28,6 +29,38 @@ The successful scan match and `WiFi connected` line prove the flashed board can
 join the home WiFi after the SSID is corrected. The HTTP error occurs after IP
 acquisition. Board-side ping diagnostics show that the board can reach the
 router and internet, but cannot reach the configured Bridge host on the Mac.
+
+## 2026-07-04 Reachable Host Validation
+
+The remaining blocker was not firmware WiFi, Bridge binding, or macOS firewall.
+The board and Mac were on the same subnet, but both directions failed ICMP/TCP
+reachability. Moving Bridge to a VPS host that the board can reach resolved the
+path.
+
+Sanitized serial evidence:
+
+```text
+App version: c72aa5b
+WiFi connected
+ping gateway: sent=3 received=3
+ping internet: sent=3 received=3
+ping bridge_host: sent=3 received=3
+device_token=configured
+device hello status=200
+Bridge hello complete
+```
+
+Sanitized Bridge evidence:
+
+```text
+GET /healthz -> 200
+POST /command -> 404
+POST /device/hello -> 200
+```
+
+The VPS Bridge was run with `--require-device-token` and
+`--disable-command-route`. The board was provisioned with a random non-empty
+device token over USB serial. The token was not printed or committed.
 
 ## 2026-07-04 Retest
 
@@ -85,11 +118,10 @@ failure.
 
 ## Next
 
-Keep Phase 6Q open until a real `/device/hello` reaches the local Bridge.
-Before changing firmware again, validate LAN reachability from another device
-on the same WiFi by opening the Bridge health endpoint, or run the Bridge on a
-host/VPS that the board can reach.
+Keep the Mac LAN path classified as blocked unless the router/client-isolation
+setting changes. Continue device work against a reachable Bridge host.
 
 Temporary AP provisioning is implemented separately in `PHASE6R_AP_PROVISIONING.md`.
-The next validation step is to flash that build, submit the setup page on the
-real board, then point the board at a Bridge host it can actually reach.
+The real board is now pointed at a Bridge host it can reach. Browser form
+submission for AP setup remains a separate UI check; USB serial provisioning is
+validated for updating only changed fields.
