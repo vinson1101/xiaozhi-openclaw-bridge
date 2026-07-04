@@ -81,6 +81,12 @@ int main(void) {{
     assert_rects_inside_screen(shifted);
     assert_face_centered(shifted);
 
+    xob_eyes_frame_t speaking = xob_eyes_frame(XOB_EYES_SPEAKING, 0);
+    xob_eyes_frame_t speaking_next = xob_eyes_frame(XOB_EYES_SPEAKING, 200);
+    assert(speaking.height == idle.height);
+    assert(speaking_next.height == idle.height);
+    assert(speaking.mouth_open == speaking_next.mouth_open);
+
     xob_screen_frame_t connected = xob_screen_render_avatar(&idle, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_PENDING);
     assert(connected.count == open.count);
     assert_rects_inside_screen(connected);

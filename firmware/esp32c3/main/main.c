@@ -586,6 +586,10 @@ static void serial_command_task(void *arg) {
                 avatar_wifi_status,
                 err == ESP_OK ? XOB_SCREEN_STATUS_OK : XOB_SCREEN_STATUS_ERROR
             );
+            if (err == ESP_OK) {
+                vTaskDelay(pdMS_TO_TICKS(1200));
+                set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+            }
             len = 0;
             continue;
         }

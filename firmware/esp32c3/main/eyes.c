@@ -58,9 +58,8 @@ xob_eyes_frame_t xob_eyes_frame(xob_eye_state_t state, uint32_t tick_ms) {
             frame.pupil_dx = ((tick_ms / 500) % 2 == 0) ? -6 : 6;
             break;
         case XOB_EYES_SPEAKING:
-            frame.height = 40 + (int16_t)((tick_ms / 120) % 6);
             frame.openness = 255;
-            frame.mouth_open = ((tick_ms / 180) % 2 == 0) ? 60 : 180;
+            frame.mouth_open = ((tick_ms / 360) % 2 == 0) ? 60 : 160;
             break;
         case XOB_EYES_ERROR:
             frame.height = 24;
