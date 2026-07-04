@@ -19,7 +19,10 @@ The Bridge accepts:
 GET /device/ws
 ```
 
-with a WebSocket upgrade request. The first supported text frame is:
+with a WebSocket upgrade request. The optional query parameter
+`target=<alias>` selects the backend route for audio-derived commands, matching
+the existing `fake` / `openclaw` / `hermas` alias model. It defaults to `fake`.
+The first supported text frame is:
 
 ```json
 {
@@ -51,14 +54,26 @@ The Bridge replies:
 }
 ```
 
+After `hello`, the Bridge keeps the WebSocket open and supports the first
+XiaoZhi-style session loop:
+
+- device text frame `{"type":"listen","state":"start","mode":"manual"}`
+- one or more binary audio frames
+- device text frame `{"type":"listen","state":"stop"}`
+- server text frames: `stt`, `tts/start`, `tts/sentence_start`, `tts/stop`
+
+This is still a protocol slice. The binary frames are passed to the existing
+local fake ASR provider as bytes; real Opus decode, streaming ASR, and outbound
+TTS audio are later work.
+
 Device token handling follows the existing pairing rule. The raw token is not
 stored in SQLite.
 
 ## Boundary
 
-This phase does not stream audio yet. It only proves the server-side XiaoZhi
-WebSocket handshake. HTTP `/device/audio` remains a diagnostic probe, not the
-final voice protocol.
+This phase does not implement real Opus decode or outbound TTS audio yet. It
+only proves the server-side XiaoZhi WebSocket control/audio frame shape. HTTP
+`/device/audio` remains a diagnostic probe, not the final voice protocol.
 
 Firmware exposes a serial `:ws` probe for the same handshake. It supports the
 current plain `http://` Bridge URL path only; `wss://` is deferred until the

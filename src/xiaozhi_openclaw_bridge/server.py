@@ -285,6 +285,116 @@ class BridgeApplication:
             },
         }
 
+    def device_websocket_control(
+        self,
+        body: bytes,
+        headers: Mapping[str, str],
+        session_id: str,
+    ) -> tuple[int, dict[str, Any]]:
+        payload, error = _parse_json(body)
+        if error:
+            return 400, {"type": "error", "message": error}
+
+        message_type = str(payload.get("type") or "")
+        device_id = str(headers.get("device-id") or payload.get("device_id") or "").strip()
+        event_payload: dict[str, Any] = {
+            "device_id": device_id,
+            "type": message_type,
+        }
+        if message_type == "listen":
+            event_payload["state"] = str(payload.get("state") or "")
+            event_payload["mode"] = str(payload.get("mode") or "")
+        elif message_type == "abort":
+            event_payload["reason"] = str(payload.get("reason") or "")
+        elif message_type == "mcp":
+            event_payload["payload_type"] = type(payload.get("payload")).__name__
+        self.store.append_event(session_id, "device.ws.control", event_payload)
+        return 200, {
+            "type": message_type,
+            "state": str(payload.get("state") or ""),
+            "mode": str(payload.get("mode") or ""),
+        }
+
+    def device_websocket_audio(
+        self,
+        audio: bytes,
+        headers: Mapping[str, str],
+        session_id: str,
+        target: str = "fake",
+    ) -> tuple[int, list[dict[str, Any]]]:
+        device_id = str(headers.get("device-id") or "").strip()
+        target = target.strip() or "fake"
+        if not device_id:
+            return 400, [{"type": "error", "message": "Device-Id is required"}]
+        if not audio:
+            return 400, [{"session_id": session_id, "type": "error", "message": "audio is required"}]
+        if len(audio) > MAX_DEVICE_AUDIO_BYTES:
+            return 413, [{"session_id": session_id, "type": "error", "message": "audio too large"}]
+
+        try:
+            transcript = asr_provider_for().transcribe(
+                AsrRequest(audio=audio, sample_rate=16000, channels=1, language="zh")
+            )
+        except ValueError as exc:
+            return 400, [{"session_id": session_id, "type": "error", "message": str(exc)}]
+
+        self.store.append_event(
+            session_id,
+            "device.ws.audio",
+            {
+                "device_id": device_id,
+                "bytes": len(audio),
+                "asr_status": transcript.status,
+                "asr_summary": transcript.summary,
+            },
+        )
+        messages: list[dict[str, Any]] = [
+            {"session_id": session_id, "type": "stt", "text": transcript.text}
+        ]
+        if transcript.status != "done" or not transcript.text.strip():
+            self.store.set_session_status(session_id, "error")
+            messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
+            return 200, messages
+
+        status, result = self._run_command(
+            {
+                "session_id": session_id,
+                "target": target,
+                "text": transcript.text,
+                "context": {
+                    "device_id": device_id,
+                    "mode": "voice",
+                    "transport": "websocket",
+                    "sample_rate": 16000,
+                    "channels": 1,
+                },
+            },
+            source={"type": "device_ws_audio", "device_id": device_id},
+        )
+        if status != 200:
+            messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
+            return status, messages
+
+        state = _device_state(result["status"])
+        self.store.append_event(
+            result["session_id"],
+            "device.result",
+            {"device_id": device_id, "state": state, "input": "websocket_audio"},
+        )
+        messages.extend(
+            [
+                {"session_id": session_id, "type": "tts", "state": "start"},
+                {
+                    "session_id": session_id,
+                    "type": "tts",
+                    "state": "sentence_start",
+                    "text": _short_display_text(result["text"]),
+                },
+                {"session_id": session_id, "type": "tts", "state": "stop"},
+            ]
+        )
+        return 200, messages
+
     def _run_command(
         self,
         payload: dict[str, Any],
@@ -401,6 +511,43 @@ def build_server(
                 status, payload = app.device_websocket_hello(body, headers)
                 _write_ws_json(self.wfile, payload)
                 print(f"GET /device/ws -> {101 if status == 200 else status}", flush=True)
+                if status != 200:
+                    return
+                session_id = str(payload["session_id"])
+                target = _query_value(urlsplit(self.path).query, "target", "fake") or "fake"
+                audio_chunks: list[bytes] = []
+                audio_bytes = 0
+                while True:
+                    opcode, body = _read_ws_frame(self.rfile)
+                    if opcode == 8:
+                        return
+                    if opcode == 2:
+                        audio_chunks.append(body)
+                        audio_bytes += len(body)
+                        if audio_bytes > MAX_DEVICE_AUDIO_BYTES:
+                            _write_ws_json(
+                                self.wfile,
+                                {"session_id": session_id, "type": "error", "message": "audio too large"},
+                            )
+                            return
+                        continue
+                    if opcode != 1:
+                        _write_ws_json(
+                            self.wfile,
+                            {"session_id": session_id, "type": "error", "message": "unsupported frame"},
+                        )
+                        continue
+                    control_status, control = app.device_websocket_control(body, headers, session_id)
+                    if control_status != 200:
+                        _write_ws_json(self.wfile, control)
+                        continue
+                    if control.get("type") == "listen" and control.get("state") == "stop":
+                        audio = b"".join(audio_chunks)
+                        audio_chunks.clear()
+                        audio_bytes = 0
+                        _, messages = app.device_websocket_audio(audio, headers, session_id, target)
+                        for message in messages:
+                            _write_ws_json(self.wfile, message)
             except OSError:
                 print("GET /device/ws -> 400", flush=True)
 
