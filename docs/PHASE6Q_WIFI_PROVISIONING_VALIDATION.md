@@ -18,12 +18,16 @@ Sanitized serial evidence:
 ```text
 WiFi scan: aps=12 target_len=11 target_matches=2 best_channel=4 best_rssi=-50 auth=3
 WiFi connected
+ping gateway: sent=3 received=3
+ping internet: sent=3 received=3
+ping bridge_host: sent=3 received=0
 device hello failed: ESP_ERR_HTTP_CONNECT
 ```
 
 The successful scan match and `WiFi connected` line prove the flashed board can
 join the home WiFi after the SSID is corrected. The HTTP error occurs after IP
-acquisition.
+acquisition. Board-side ping diagnostics show that the board can reach the
+router and internet, but cannot reach the configured Bridge host on the Mac.
 
 ## Network Check
 
@@ -35,12 +39,16 @@ Mac-side read-only diagnostics showed:
 - the Bridge port was reachable on both loopback and the Mac LAN address
 - the board appeared in the Mac ARP table on the same `/24`
 - ping from the Mac to the board failed
+- ping from the board to the gateway succeeded
+- ping from the board to the internet succeeded
+- ping from the board to the configured Mac Bridge host failed
 - no TCP connection from the board appeared on the Mac listener during a reboot
 - the macOS application firewall was disabled
 
 That makes the remaining issue local network reachability between WiFi clients
 or local-network permission for inbound connections to the Mac process. It is
-not currently a firmware WiFi association failure.
+not currently a firmware WiFi association, DHCP, DNS, gateway, or internet
+failure.
 
 ## Firmware Changes
 
@@ -52,6 +60,7 @@ not currently a firmware WiFi association failure.
 - On WiFi failure, show a red WiFi status marker and return to USB serial provisioning instead of showing a squashed error eye.
 - Match scanned SSIDs by exact length and bytes, then log only safe hashes and aggregate match data.
 - Use all-channel station scan/connect settings so band steering and multiple APs are less likely to pick the wrong candidate.
+- Add board-side network diagnostics for DHCP details plus gateway, internet, and Bridge-host ping.
 
 ## Next
 

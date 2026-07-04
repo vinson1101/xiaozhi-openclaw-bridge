@@ -177,6 +177,7 @@ Tasks:
 - [x] Display Bridge connection state.
 - [x] Add safe WiFi scan diagnostics and USB serial fallback after WiFi failure.
 - [x] Provision WiFi config on the flashed board and validate WiFi association.
+- [x] Add board-side gateway, internet, and Bridge-host reachability diagnostics.
 - [ ] Implement temporary AP plus local HTTP config page for normal WiFi/Bridge setup.
 - [ ] Validate one real `/device/hello` against a reachable Bridge.
 

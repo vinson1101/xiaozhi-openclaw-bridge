@@ -14,8 +14,11 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "ping/ping_sock.h"
+#include "lwip/ip_addr.h"
 
 #include "eyes.h"
 #include "lcd.h"
@@ -24,6 +27,7 @@
 
 static const char *TAG = "xob";
 static EventGroupHandle_t wifi_events;
+static esp_netif_t *wifi_netif;
 static const int WIFI_CONNECTED_BIT = BIT0;
 static const int WIFI_FAIL_BIT = BIT1;
 static int wifi_retry_count;
@@ -46,6 +50,14 @@ typedef struct {
     char wifi_ssid[33];
     char wifi_password[65];
 } app_config_t;
+
+typedef struct {
+    const char *label;
+    SemaphoreHandle_t done;
+    uint32_t transmitted;
+    uint32_t received;
+    uint32_t duration_ms;
+} ping_result_t;
 
 static esp_err_t read_string(nvs_handle_t nvs, const char *key, char *out, size_t out_len) {
     size_t required = out_len;
@@ -195,6 +207,127 @@ static void log_target_scan_result(const char *target_ssid) {
     free(records);
 }
 
+static void on_ping_end(esp_ping_handle_t hdl, void *args) {
+    ping_result_t *result = (ping_result_t *)args;
+    esp_ping_get_profile(hdl, ESP_PING_PROF_REQUEST, &result->transmitted, sizeof(result->transmitted));
+    esp_ping_get_profile(hdl, ESP_PING_PROF_REPLY, &result->received, sizeof(result->received));
+    esp_ping_get_profile(hdl, ESP_PING_PROF_DURATION, &result->duration_ms, sizeof(result->duration_ms));
+    xSemaphoreGive(result->done);
+}
+
+static esp_err_t ping_target(const char *label, const ip_addr_t *target_addr) {
+    ping_result_t result = {
+        .label = label,
+        .done = xSemaphoreCreateBinary(),
+    };
+    if (result.done == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
+    config.target_addr = *target_addr;
+    config.count = 3;
+    config.interval_ms = 300;
+    config.timeout_ms = 1000;
+    config.task_stack_size = 3072;
+    if (wifi_netif != NULL) {
+        config.interface = esp_netif_get_netif_impl_index(wifi_netif);
+    }
+
+    esp_ping_callbacks_t callbacks = {
+        .on_ping_end = on_ping_end,
+        .cb_args = &result,
+    };
+
+    esp_ping_handle_t ping = NULL;
+    esp_err_t err = esp_ping_new_session(&config, &callbacks, &ping);
+    if (err != ESP_OK) {
+        vSemaphoreDelete(result.done);
+        ESP_LOGW(TAG, "ping %s start failed: %s", label, esp_err_to_name(err));
+        return err;
+    }
+
+    err = esp_ping_start(ping);
+    if (err == ESP_OK && xSemaphoreTake(result.done, pdMS_TO_TICKS(5000)) != pdTRUE) {
+        err = ESP_ERR_TIMEOUT;
+    }
+    esp_ping_delete_session(ping);
+    vSemaphoreDelete(result.done);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "ping %s failed: %s", label, esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(TAG, "ping %s: sent=%lu received=%lu duration_ms=%lu",
+             label,
+             (unsigned long)result.transmitted,
+             (unsigned long)result.received,
+             (unsigned long)result.duration_ms);
+    return result.received > 0 ? ESP_OK : ESP_FAIL;
+}
+
+static bool bridge_url_ipv4_target(const char *bridge_url, ip_addr_t *out) {
+    const char *host = strstr(bridge_url, "://");
+    host = host == NULL ? bridge_url : host + 3;
+    if (*host == '[' || *host == '\0') {
+        return false;
+    }
+
+    char host_buf[64] = {0};
+    size_t len = 0;
+    while (host[len] != '\0' && host[len] != ':' && host[len] != '/' && len + 1 < sizeof(host_buf)) {
+        host_buf[len] = host[len];
+        len++;
+    }
+    host_buf[len] = '\0';
+    return len > 0 && ipaddr_aton(host_buf, out) == 1 && out->type == IPADDR_TYPE_V4;
+}
+
+static void log_network_diagnostics(const app_config_t *config) {
+    if (wifi_netif == NULL) {
+        ESP_LOGW(TAG, "netif diagnostics skipped: no STA netif");
+        return;
+    }
+
+    esp_netif_ip_info_t ip_info = {0};
+    esp_err_t err = esp_netif_get_ip_info(wifi_netif, &ip_info);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "netif ip info failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    esp_netif_dns_info_t dns_info = {0};
+    err = esp_netif_get_dns_info(wifi_netif, ESP_NETIF_DNS_MAIN, &dns_info);
+    if (err == ESP_OK && dns_info.ip.type == ESP_IPADDR_TYPE_V4) {
+        ESP_LOGI(TAG, "netif: ip=" IPSTR " mask=" IPSTR " gw=" IPSTR " dns=" IPSTR,
+                 IP2STR(&ip_info.ip),
+                 IP2STR(&ip_info.netmask),
+                 IP2STR(&ip_info.gw),
+                 IP2STR(&dns_info.ip.u_addr.ip4));
+    } else {
+        ESP_LOGI(TAG, "netif: ip=" IPSTR " mask=" IPSTR " gw=" IPSTR " dns=unavailable",
+                 IP2STR(&ip_info.ip),
+                 IP2STR(&ip_info.netmask),
+                 IP2STR(&ip_info.gw));
+    }
+
+    ip_addr_t gateway = {0};
+    gateway.type = IPADDR_TYPE_V4;
+    gateway.u_addr.ip4.addr = ip_info.gw.addr;
+    (void)ping_target("gateway", &gateway);
+
+    ip_addr_t internet = {0};
+    IP_ADDR4(&internet, 223, 5, 5, 5);
+    (void)ping_target("internet", &internet);
+
+    ip_addr_t bridge_host = {0};
+    if (bridge_url_ipv4_target(config->bridge_url, &bridge_host)) {
+        (void)ping_target("bridge_host", &bridge_host);
+    } else {
+        ESP_LOGI(TAG, "ping bridge_host skipped: bridge URL host is not an IPv4 literal");
+    }
+}
+
 static esp_err_t connect_wifi(const app_config_t *config) {
     wifi_events = xEventGroupCreate();
     if (wifi_events == NULL) {
@@ -203,7 +336,10 @@ static esp_err_t connect_wifi(const app_config_t *config) {
 
     ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "netif init");
     ESP_RETURN_ON_ERROR(esp_event_loop_create_default(), TAG, "event loop");
-    esp_netif_create_default_wifi_sta();
+    wifi_netif = esp_netif_create_default_wifi_sta();
+    if (wifi_netif == NULL) {
+        return ESP_FAIL;
+    }
 
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     init.nvs_enable = false;
@@ -243,6 +379,7 @@ static esp_err_t connect_wifi(const app_config_t *config) {
     );
     if ((bits & WIFI_CONNECTED_BIT) != 0) {
         ESP_LOGI(TAG, "WiFi connected");
+        log_network_diagnostics(config);
         return ESP_OK;
     }
     ESP_LOGW(TAG, "WiFi connection failed or timed out");
