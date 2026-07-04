@@ -1,0 +1,46 @@
+# Phase 6R AP Provisioning
+
+Phase 6R adds the normal setup path for a flashed board when USB serial tooling is inconvenient.
+
+## Result
+
+When `xob` config is missing, or WiFi connection fails, the firmware now starts:
+
+```text
+SSID: XOB-<device-suffix>
+Password: xob-<lowercase device-suffix>
+URL: http://192.168.4.1/
+```
+
+The setup page accepts:
+
+- `bridge_url`
+- `device_token`
+- `wifi_ssid`
+- `wifi_password`
+
+`bridge_url` and `wifi_ssid` are required. `device_token` and `wifi_password`
+may be empty for local development or open WiFi.
+
+On save, the firmware writes only the existing `xob` NVS namespace and reboots.
+The AP server runs alongside the existing USB serial provisioning loop, so the
+serial path remains the fallback.
+
+## Boundaries
+
+- No captive portal or DNS redirect.
+- No token rotation or pairing admin UI.
+- No stock NVS reads or erases.
+- No WiFi password, device token, raw MAC, or real Bridge address is logged or committed.
+
+## Validation
+
+Validated in this phase:
+
+```text
+python3 scripts/check_firmware_skeleton.py
+python3 scripts/check_eye_render.py
+idf.py build
+```
+
+Real browser submission on the board remains pending until the next flash.

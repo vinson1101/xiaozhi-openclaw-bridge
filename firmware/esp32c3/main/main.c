@@ -528,12 +528,14 @@ void app_main(void) {
     app_config_t config = {0};
     if (load_config(&config) != ESP_OK) {
         set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_OFF);
+        xob_start_ap_provisioning();
         xob_run_serial_provisioning();
         return;
     }
     set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_OFF);
     if (connect_wifi(&config) != ESP_OK) {
         set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_ERROR, XOB_SCREEN_STATUS_OFF);
+        xob_start_ap_provisioning();
         xob_run_serial_provisioning();
         return;
     }

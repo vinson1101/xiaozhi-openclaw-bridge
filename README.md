@@ -36,6 +36,7 @@ Project documents:
 - [docs/PHASE6O_FIRST_CUSTOM_FLASH.md](docs/PHASE6O_FIRST_CUSTOM_FLASH.md): first custom flash and avatar check
 - [docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md](docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md): WiFi and Bridge status display
 - [docs/PHASE6Q_WIFI_PROVISIONING_VALIDATION.md](docs/PHASE6Q_WIFI_PROVISIONING_VALIDATION.md): WiFi provisioning validation
+- [docs/PHASE6R_AP_PROVISIONING.md](docs/PHASE6R_AP_PROVISIONING.md): temporary AP provisioning
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan

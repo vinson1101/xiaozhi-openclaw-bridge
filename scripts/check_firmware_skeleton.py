@@ -32,7 +32,7 @@ def main() -> None:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED if not path.exists()]
     assert not missing, f"missing firmware files: {', '.join(missing)}"
     main_c = (FW / "main" / "main.c").read_text()
-    for token in ["nvs_flash_init", "bridge_url", "device_token", "wifi_ssid", "post_device_hello", "xob_eyes_frame", "xob_screen_render_avatar", "xob_run_serial_provisioning", "esp32c3"]:
+    for token in ["nvs_flash_init", "bridge_url", "device_token", "wifi_ssid", "post_device_hello", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "esp32c3"]:
         assert token in main_c or token in (FW / "sdkconfig.defaults").read_text(), f"missing {token}"
     assert "nvs_flash_erase" not in main_c, "firmware must not erase stock NVS automatically"
     eyes_c = (FW / "main" / "eyes.c").read_text()
@@ -42,7 +42,7 @@ def main() -> None:
     for token in ["XOB_SCREEN_WIDTH", "XOB_SCREEN_HEIGHT", "XOB_RGB565_WHITE", "XOB_RGB565_BLACK", "xob_screen_render_avatar"]:
         assert token in screen_c or token in (FW / "main" / "screen.h").read_text(), f"missing {token}"
     provisioning_c = (FW / "main" / "provisioning.c").read_text()
-    for token in ["NVS_READWRITE", "nvs_set_str", "nvs_commit", "bridge_url", "device_token", "wifi_ssid", "wifi_password", "esp_restart"]:
+    for token in ["NVS_READWRITE", "nvs_set_str", "nvs_commit", "bridge_url", "device_token", "wifi_ssid", "wifi_password", "esp_http_server", "httpd_start", "WIFI_MODE_APSTA", "esp_restart"]:
         assert token in provisioning_c, f"missing {token}"
     build_script = (ROOT / "scripts" / "build_firmware.sh").read_text()
     for token in ["idf.py set-target esp32c3", "idf.py build"]:

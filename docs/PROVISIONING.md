@@ -33,11 +33,16 @@ Provisioning mode should show a screen state and expose two setup paths:
 - USB serial setup for development.
 - Temporary WiFi AP plus local HTTP form for normal use.
 
-The AP name should be `XOB-<device-suffix>`. The local form writes only the `xob` namespace.
+The AP name is `XOB-<device-suffix>`. The temporary AP password is
+`xob-<lowercase device-suffix>`. The local form writes only the `xob` namespace.
 
-The first implemented path is USB serial provisioning. It prompts for `bridge_url`, `device_token`, `wifi_ssid`, and `wifi_password`, then writes only the `xob` namespace and reboots.
+The implemented paths are USB serial provisioning and temporary AP provisioning.
+Both accept `bridge_url`, `device_token`, `wifi_ssid`, and `wifi_password`, then
+write only the `xob` namespace and reboot.
 
-During development, a WiFi connection failure also falls back to the same USB serial provisioning path. This lets the operator correct SSID, password, Bridge URL, or token without erasing flash or touching stock NVS data.
+During development, a WiFi connection failure also falls back to the same
+provisioning mode. This lets the operator correct SSID, password, Bridge URL, or
+token without erasing flash or touching stock NVS data.
 
 The firmware keeps WiFi driver storage in RAM, then sets WiFi country to CN so 2.4 GHz channels 1-13 are scan/connect candidates. Diagnostic logs may report aggregate scan counts and target match counts, but must not print SSID values, WiFi passwords, device tokens, raw MAC addresses, or Bridge secrets.
 
