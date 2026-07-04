@@ -20,8 +20,10 @@ constants need to be swapped.
 
 - All three buttons pressed at app startup enter provisioning.
 - All three buttons held for two seconds while running enter provisioning.
-- The middle button interrupts the current visual conversation state and sets the
-  avatar to `listening` while held.
+- The middle button interrupts the current visual conversation state and latches
+  the avatar into `listening`.
+- Button mask changes are logged as safe GPIO bitmasks for physical mapping
+  checks.
 - Volume buttons adjust an in-memory volume value in 5-point steps.
 
 The volume value is not persisted yet and is not connected to audio output.
@@ -31,7 +33,8 @@ That belongs to Phase 7 when playback exists.
 
 - No full NVS erase.
 - No stock configuration reads.
-- No audio recording, TTS stop, or server-side cancel starts yet.
+- No audio recording, TTS stop, server-side cancel, or automatic end-of-listen
+  state transition starts yet.
 - No long-press reset namespace erase yet.
 
 ## Validation

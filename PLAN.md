@@ -29,7 +29,7 @@
 - First custom firmware flash and avatar check exists in `docs/PHASE6O_FIRST_CUSTOM_FLASH.md`.
 - WiFi and Bridge status display exists in `docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
-- ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xf9e70`, with 72% of the smallest app partition free.
+- ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xf9eb0`, with 72% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.

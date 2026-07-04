@@ -534,6 +534,9 @@ static void button_task(void *arg) {
         uint8_t pressed = mask & (uint8_t)~last;
         int64_t now = esp_timer_get_time();
 
+        if (mask != last) {
+            ESP_LOGI(TAG, "button mask=0x%02x", mask);
+        }
         if ((mask & XOB_BUTTON_ALL) == XOB_BUTTON_ALL) {
             if (all_pressed_since == 0) {
                 all_pressed_since = now;
@@ -553,9 +556,6 @@ static void button_task(void *arg) {
             if ((pressed & XOB_BUTTON_LISTEN) != 0) {
                 ESP_LOGI(TAG, "interrupt/listen button pressed");
                 set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
-            }
-            if ((last & XOB_BUTTON_LISTEN) != 0 && (mask & XOB_BUTTON_LISTEN) == 0) {
-                set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
             }
         }
 
@@ -637,6 +637,8 @@ void app_main(void) {
     } else if ((button_mask() & XOB_BUTTON_ALL) == XOB_BUTTON_ALL) {
         enter_button_provisioning();
         return;
+    } else {
+        start_button_task();
     }
 
     app_config_t config = {0};
@@ -654,7 +656,6 @@ void app_main(void) {
         return;
     }
     set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_PENDING);
-    start_button_task();
 
     ESP_LOGI(TAG, "XOB firmware skeleton ready");
     ESP_LOGI(TAG, "bridge_url=%s", strlen(config.bridge_url) > 0 ? "configured" : "empty");
