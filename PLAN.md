@@ -41,6 +41,7 @@
 - Systemd Bridge service template exists in `deploy/systemd/xob-bridge.service`.
 - Bridge HTTP request logs print method, path, and status only.
 - Bridge health check script exists in `scripts/check_bridge_health.py`.
+- SQLite backup/restore helper exists in `scripts/bridge_db_backup.py`.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -256,7 +257,7 @@ Tasks:
 - [ ] Add reverse proxy sample.
 - [x] Add service unit or container deployment.
 - [x] Add health checks.
-- [ ] Add backup/restore for SQLite.
+- [x] Add backup/restore for SQLite.
 - [x] Add logging without secret leakage.
 
 Acceptance:
