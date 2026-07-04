@@ -50,6 +50,7 @@
 - ASR provider boundary exists with a local fake provider.
 - TTS provider boundary exists with cacheable fixed prompts and a local fake WAV provider.
 - Recognized text can be routed through the existing Bridge command handler.
+- Bridge accepts paired device audio uploads at `/device/audio` and routes fake ASR text through the command handler.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
 - Deployment units disable the generic `/command` route for public device hosts.
 - Real board `/device/hello` is validated against a reachable token-protected VPS Bridge.

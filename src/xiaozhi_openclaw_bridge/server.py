@@ -6,11 +6,14 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 from xiaozhi_openclaw_bridge.adapters import AgentRequest, adapter_for
+from xiaozhi_openclaw_bridge.asr import AsrRequest, asr_provider_for
 from xiaozhi_openclaw_bridge.store import EventStore
+
+MAX_DEVICE_AUDIO_BYTES = 2 * 1024 * 1024
 
 
 class BridgeApplication:
@@ -32,7 +35,8 @@ class BridgeApplication:
         body: bytes | None,
         headers: Mapping[str, str] | None = None,
     ) -> tuple[int, dict[str, Any]]:
-        path = urlsplit(target).path
+        parsed = urlsplit(target)
+        path = parsed.path
         if method == "GET" and path == "/healthz":
             return 200, {"status": "ok"}
         if method == "POST" and path == "/command":
@@ -43,6 +47,8 @@ class BridgeApplication:
             return self._device_hello(body, headers or {})
         if method == "POST" and path == "/device/command":
             return self._device_command(body, headers or {})
+        if method == "POST" and path == "/device/audio":
+            return self._device_audio(body, headers or {}, parsed.query)
         return 404, {"error": "not_found"}
 
     def _command(self, body: bytes | None) -> tuple[int, dict[str, Any]]:
@@ -127,6 +133,95 @@ class BridgeApplication:
             "device_id": device_id,
             "session_id": result["session_id"],
             "state": state,
+            "display": _short_display_text(result["text"]),
+            "result": result,
+        }
+
+    def _device_audio(
+        self,
+        body: bytes | None,
+        headers: Mapping[str, str],
+        query: str,
+    ) -> tuple[int, dict[str, Any]]:
+        if not body:
+            return 400, {"error": "audio body is required"}
+        if len(body) > MAX_DEVICE_AUDIO_BYTES:
+            return 413, {"error": "audio body too large"}
+
+        device_id = _query_value(query, "device_id")
+        if not device_id:
+            return 400, {"error": "device_id is required"}
+        pairing = self.store.get_device_pairing(device_id)
+        if pairing is None:
+            return 403, {"error": "device is not paired"}
+        auth_error = _authorize_pairing(pairing["token_hash"], _token_hash(_bearer_token(headers)))
+        if auth_error is not None:
+            return auth_error
+        self.store.touch_device_pairing(device_id)
+
+        target = _query_value(query, "target", "fake") or "fake"
+        session_id = _query_value(query, "session_id") or self.store.create_session(target)
+        sample_rate = _positive_int(_query_value(query, "sample_rate"), 16000)
+        channels = _positive_int(_query_value(query, "channels"), 1)
+        language = _query_value(query, "language", "zh") or "zh"
+
+        try:
+            transcript = asr_provider_for().transcribe(
+                AsrRequest(audio=body, sample_rate=sample_rate, channels=channels, language=language)
+            )
+        except ValueError as exc:
+            return 400, {"error": str(exc)}
+
+        self.store.append_event(
+            session_id,
+            "device.audio",
+            {
+                "device_id": device_id,
+                "bytes": len(body),
+                "sample_rate": sample_rate,
+                "channels": channels,
+                "asr_status": transcript.status,
+                "asr_summary": transcript.summary,
+            },
+        )
+        if transcript.status != "done" or not transcript.text.strip():
+            self.store.set_session_status(session_id, "error")
+            return 200, {
+                "device_id": device_id,
+                "session_id": session_id,
+                "state": "error",
+                "transcript": transcript.text,
+                "summary": transcript.summary,
+            }
+
+        status, result = self._run_command(
+            {
+                "session_id": session_id,
+                "target": target,
+                "text": transcript.text,
+                "context": {
+                    "device_id": device_id,
+                    "mode": "voice",
+                    "sample_rate": sample_rate,
+                    "channels": channels,
+                },
+            },
+            source={"type": "device_audio", "device_id": device_id},
+        )
+        if status != 200:
+            return status, result
+
+        state = _device_state(result["status"])
+        self.store.append_event(
+            result["session_id"],
+            "device.result",
+            {"device_id": device_id, "state": state, "input": "audio"},
+        )
+        return 200, {
+            "device_id": device_id,
+            "session_id": result["session_id"],
+            "state": state,
+            "transcript": transcript.text,
             "display": _short_display_text(result["text"]),
             "result": result,
         }
@@ -233,6 +328,21 @@ def _parse_json(body: bytes | None) -> tuple[dict[str, Any], str | None]:
     if not isinstance(payload, dict):
         return {}, "request body must be a JSON object"
     return payload, None
+
+
+def _query_value(query: str, name: str, default: str = "") -> str:
+    values = parse_qs(query, keep_blank_values=True).get(name)
+    if not values:
+        return default
+    return values[0].strip()
+
+
+def _positive_int(raw: str, default: int) -> int:
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def _bearer_token(headers: Mapping[str, str]) -> str:
