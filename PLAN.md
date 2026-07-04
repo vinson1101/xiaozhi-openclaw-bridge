@@ -42,6 +42,7 @@
 - Bridge HTTP request logs print method, path, and status only.
 - Bridge health check script exists in `scripts/check_bridge_health.py`.
 - SQLite backup/restore helper exists in `scripts/bridge_db_backup.py`.
+- Nginx reverse proxy sample exists in `deploy/nginx/xob-bridge.conf`.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -254,7 +255,7 @@ Tasks:
 
 - [ ] Add pairing flow.
 - [ ] Add token rotation.
-- [ ] Add reverse proxy sample.
+- [x] Add reverse proxy sample.
 - [x] Add service unit or container deployment.
 - [x] Add health checks.
 - [x] Add backup/restore for SQLite.
