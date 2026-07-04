@@ -46,6 +46,7 @@
 - Deployment service requires device tokens for pairing.
 - Offline device token rotation helper exists in `scripts/rotate_device_credential.py`.
 - Device HTTP simulator validates reconnect with the existing session id.
+- Xiaoyuan fixed voice prompts exist in `src/xiaozhi_openclaw_bridge/voice.py`.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -214,7 +215,7 @@ Tasks:
 - [ ] Upload PCM16 audio frames.
 - [ ] Add ASR provider adapter.
 - [ ] Route recognized text to backend.
-- [ ] Define fixed Xiaoyuan voice-pack prompts for wake, confirm, interrupt, error, and setup states.
+- [x] Define fixed Xiaoyuan voice-pack prompts for wake, confirm, interrupt, error, and setup states.
 - [ ] Use existing Minimax TTS as the first dynamic-answer provider; avoid stiff generic TTS except as fallback.
 - [ ] Add TTS provider adapter with cacheable fixed prompts and replaceable dynamic provider.
 - [ ] Play returned audio on device.
