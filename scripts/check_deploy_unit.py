@@ -35,6 +35,8 @@ def main() -> None:
     nginx = NGINX.read_text()
     assert "proxy_pass http://127.0.0.1:8788;" in nginx, "nginx must proxy to local Bridge"
     assert "location /device/" in nginx, "nginx must expose device API"
+    assert 'proxy_set_header Upgrade $http_upgrade;' in nginx, "nginx must proxy WebSocket upgrades"
+    assert 'proxy_set_header Connection "upgrade";' in nginx, "nginx must keep upgraded device connections"
     assert "location / {" in nginx and "return 404;" in nginx, "nginx must not expose all routes"
     assert "ssl_certificate" in nginx, "nginx sample must terminate TLS"
     print("check_deploy_unit ok")

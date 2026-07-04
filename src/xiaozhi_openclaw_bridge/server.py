@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +15,7 @@ from xiaozhi_openclaw_bridge.asr import AsrRequest, asr_provider_for
 from xiaozhi_openclaw_bridge.store import EventStore
 
 MAX_DEVICE_AUDIO_BYTES = 2 * 1024 * 1024
+WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 class BridgeApplication:
@@ -226,6 +228,63 @@ class BridgeApplication:
             "result": result,
         }
 
+    def device_websocket_hello(
+        self,
+        body: bytes,
+        headers: Mapping[str, str],
+    ) -> tuple[int, dict[str, Any]]:
+        payload, error = _parse_json(body)
+        if error:
+            return 400, {"type": "error", "message": error}
+        if payload.get("type") != "hello" or payload.get("transport") != "websocket":
+            return 400, {"type": "error", "message": "expected websocket hello"}
+
+        device_id = str(headers.get("device-id") or payload.get("device_id") or "").strip()
+        if not device_id:
+            return 400, {"type": "error", "message": "Device-Id is required"}
+        token_hash = _token_hash(_bearer_token(headers))
+        if self.require_device_token and not token_hash:
+            return 401, {"type": "error", "message": "device token is required"}
+        pairing = self.store.get_device_pairing(device_id)
+        if pairing is not None:
+            auth_error = _authorize_pairing(pairing["token_hash"], token_hash)
+            if auth_error is not None:
+                status, error_payload = auth_error
+                return status, {"type": "error", "message": error_payload["error"]}
+
+        self.store.upsert_device_pairing(
+            device_id=device_id,
+            name=device_id,
+            token_hash=token_hash,
+            firmware=str(payload.get("firmware") or "xiaozhi-websocket"),
+            capabilities=["websocket", "audio_in", "audio_out"],
+        )
+        session_id = self.store.create_session("device_ws")
+        frame_duration = _audio_param_int(payload, "frame_duration", 60)
+        self.store.append_event(
+            session_id,
+            "device.ws.hello",
+            {
+                "device_id": device_id,
+                "transport": "websocket",
+                "version": payload.get("version"),
+                "client_id": str(headers.get("client-id") or ""),
+                "protocol_version": str(headers.get("protocol-version") or ""),
+                "audio_params": payload.get("audio_params") if isinstance(payload.get("audio_params"), dict) else {},
+            },
+        )
+        return 200, {
+            "type": "hello",
+            "transport": "websocket",
+            "session_id": session_id,
+            "audio_params": {
+                "format": "opus",
+                "sample_rate": 24000,
+                "channels": 1,
+                "frame_duration": frame_duration,
+            },
+        }
+
     def _run_command(
         self,
         payload: dict[str, Any],
@@ -294,6 +353,9 @@ def build_server(
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
+            if urlsplit(self.path).path == "/device/ws":
+                self._handle_device_websocket()
+                return
             self._handle()
 
         def do_POST(self) -> None:  # noqa: N802
@@ -314,6 +376,33 @@ def build_server(
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)
+
+        def _handle_device_websocket(self) -> None:
+            headers = {key.lower(): value for key, value in self.headers.items()}
+            key = headers.get("sec-websocket-key", "")
+            if headers.get("upgrade", "").lower() != "websocket" or not key:
+                self.send_error(400, "websocket upgrade required")
+                return
+
+            accept = base64.b64encode(hashlib.sha1((key + WEBSOCKET_GUID).encode()).digest()).decode()
+            self.send_response(101, "Switching Protocols")
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", accept)
+            self.end_headers()
+            self.close_connection = True
+
+            try:
+                self.connection.settimeout(10)
+                opcode, body = _read_ws_frame(self.rfile)
+                if opcode != 1:
+                    _write_ws_json(self.wfile, {"type": "error", "message": "expected text hello"})
+                    return
+                status, payload = app.device_websocket_hello(body, headers)
+                _write_ws_json(self.wfile, payload)
+                print(f"GET /device/ws -> {101 if status == 200 else status}", flush=True)
+            except OSError:
+                print("GET /device/ws -> 400", flush=True)
 
     return ThreadingHTTPServer((host, port), Handler)
 
@@ -343,6 +432,51 @@ def _positive_int(raw: str, default: int) -> int:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def _audio_param_int(payload: dict[str, Any], name: str, default: int) -> int:
+    audio_params = payload.get("audio_params")
+    if not isinstance(audio_params, dict):
+        return default
+    value = audio_params.get(name)
+    if not isinstance(value, int):
+        return default
+    return value if value > 0 else default
+
+
+def _read_ws_frame(stream: Any) -> tuple[int, bytes]:
+    header = stream.read(2)
+    if len(header) != 2:
+        raise OSError("missing websocket header")
+    first, second = header
+    opcode = first & 0x0F
+    length = second & 0x7F
+    if length == 126:
+        length = int.from_bytes(stream.read(2), "big")
+    elif length == 127:
+        length = int.from_bytes(stream.read(8), "big")
+    mask = stream.read(4) if second & 0x80 else b""
+    payload = stream.read(length)
+    if len(payload) != length:
+        raise OSError("truncated websocket frame")
+    if mask:
+        payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+    return opcode, payload
+
+
+def _write_ws_json(stream: Any, payload: dict[str, Any]) -> None:
+    _write_ws_frame(stream, json.dumps(payload, ensure_ascii=False, sort_keys=True).encode())
+
+
+def _write_ws_frame(stream: Any, payload: bytes) -> None:
+    if len(payload) < 126:
+        header = bytes([0x81, len(payload)])
+    elif len(payload) < 65536:
+        header = bytes([0x81, 126]) + len(payload).to_bytes(2, "big")
+    else:
+        header = bytes([0x81, 127]) + len(payload).to_bytes(8, "big")
+    stream.write(header + payload)
+    stream.flush()
 
 
 def _bearer_token(headers: Mapping[str, str]) -> str:

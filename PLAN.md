@@ -52,6 +52,7 @@
 - Recognized text can be routed through the existing Bridge command handler.
 - Bridge accepts paired device audio uploads at `/device/audio` and routes fake ASR text through the command handler.
 - Firmware serial `:voice` / `:audio` probe uploads silent PCM to `/device/audio`.
+- Bridge accepts XiaoZhi-compatible WebSocket hello at `/device/ws`.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
 - Deployment units disable the generic `/command` route for public device hosts.
 - Real board `/device/hello` is validated against a reachable token-protected VPS Bridge.
@@ -135,11 +136,12 @@ Acceptance:
 
 Goal: prove the device protocol before flashing hardware.
 
-Phase 4A uses HTTP JSON first. WebSocket stays deferred until firmware consumes it.
+Phase 4A uses HTTP JSON first. WebSocket is now the preferred voice-session path
+because it matches XiaoZhi's upstream server protocol.
 
 Tasks:
 
-- [ ] Add WebSocket `/device`.
+- [x] Add WebSocket `/device/ws` hello handshake.
 - [x] Implement HTTP `hello` and `command.text`.
 - [x] Add simulator script.
 - [x] Store device pairing in SQLite.
@@ -223,6 +225,7 @@ Tasks:
 
 - [ ] Add press-to-record.
 - [ ] Upload PCM16 audio frames. Current probe uploads one silent frame over HTTP.
+- [x] Add XiaoZhi-compatible WebSocket hello handshake.
 - [x] Add ASR provider adapter.
 - [x] Route recognized text to backend.
 - [x] Define fixed Xiaoyuan voice-pack prompts for wake, confirm, interrupt, error, and setup states.

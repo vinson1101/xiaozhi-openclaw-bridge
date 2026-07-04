@@ -78,33 +78,34 @@ OpenClaw / Hermas / Zebra adapters
 传输：
 
 - 开发期：HTTP JSON `/device/hello` 和 `/device/command`
-- 音频期：`ws://bridge.local:8788/device`
-- VPS 音频期：`wss://voice.example.com/device`
+- 音频期：小智兼容 WebSocket `ws://bridge.local:8788/device/ws`
+- VPS 音频期：小智兼容 WebSocket `wss://voice.example.com/device/ws`
 - 控制消息：JSON
-- 音频：二进制 WebSocket frame
+- 音频：二进制 WebSocket frame，格式优先兼容小智 Opus frame
 
 基础消息：
 
 ```json
-{"type":"hello","device_id":"...","firmware":"...","token":"...","capabilities":["audio_in","audio_out","screen"]}
+{"type":"hello","version":1,"transport":"websocket","audio_params":{"format":"opus","sample_rate":16000,"channels":1,"frame_duration":60}}
 ```
 
 ```json
-{"type":"state","state":"idle|listening|thinking|speaking|error","text":"短文本"}
+{"session_id":"...","type":"listen","state":"start","mode":"manual"}
 ```
 
 ```json
-{"type":"command.text","session_id":"...","target":"openclaw","text":"让龙虾检查今天任务状态"}
+{"session_id":"...","type":"stt","text":"让龙虾检查今天任务状态"}
 ```
 
 ```json
-{"type":"audio.start","session_id":"...","format":"pcm16","sample_rate":16000,"channels":1}
+{"session_id":"...","type":"tts","state":"sentence_start","text":"正在检查"}
 ```
 
 音频路线：
 
-- MVP：PCM16 16 kHz mono，简单可靠。
-- 后续：如果带宽或延迟不够，再考虑 Opus。
+- 调试探针：HTTP `/device/audio` 可上传短 PCM16，用来验证网络和鉴权。
+- 主路径：按小智原框架使用 WebSocket JSON 控制帧 + 二进制 Opus 音频帧。
+- 不新增 MQTT+UDP，除非后续确认 WebSocket 延迟或稳定性不够。
 
 ### 2.4 Bridge 服务层
 
@@ -113,7 +114,7 @@ OpenClaw / Hermas / Zebra adapters
 - Python 3.9+。
 - SQLite 作为本地事件和记忆库。
 - 文本 MVP 可以用标准库 HTTP 先跑通。
-- WebSocket 和音频阶段再引入 FastAPI/Uvicorn 或等价 ASGI 栈。
+- WebSocket hello 先用标准库实现；真正流式音频若标准库变重，再引入 ASGI 栈。
 
 Bridge 职责：
 
