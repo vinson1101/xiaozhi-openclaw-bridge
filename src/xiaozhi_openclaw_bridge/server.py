@@ -191,6 +191,7 @@ def build_server(host: str, port: int, db_path: str | Path) -> ThreadingHTTPServ
             body = self.rfile.read(length) if length else None
             headers = {key.lower(): value for key, value in self.headers.items()}
             status, payload = app.handle(self.command, self.path, body, headers)
+            print(f"{self.command} {urlsplit(self.path).path} -> {status}", flush=True)
             encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")

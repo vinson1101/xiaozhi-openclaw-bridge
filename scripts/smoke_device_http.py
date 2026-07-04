@@ -6,6 +6,8 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -21,47 +23,55 @@ def main() -> None:
         db = Path(tmp) / "bridge.sqlite3"
         server = build_server("127.0.0.1", 0, db)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
+        logs = StringIO()
         thread.start()
         try:
             host, port = server.server_address
-            _wait_for_health(host, port)
-            base = f"http://{host}:{port}"
-            token = "dev-pairing-token"
-            hello = _post_json(
-                f"{base}/device/hello",
-                {
-                    "device_id": "sim-esp32-c3",
-                    "name": "simulator",
-                    "firmware": "simulator",
-                    "capabilities": ["display", "text"],
-                },
-                token=token,
-            )
-            assert hello["state"] == "ready"
-            assert hello["paired"] is True
-            missing_auth = _post_json_expect_error(
-                f"{base}/device/command",
-                {
-                    "device_id": hello["device_id"],
-                    "session_id": hello["session_id"],
-                    "target": "fake",
-                    "text": "这条不应该执行",
-                },
-            )
-            assert missing_auth["status"] == 401
-            assert missing_auth["payload"]["error"] == "invalid device token"
-            command = _post_json(
-                f"{base}/device/command",
-                {
-                    "device_id": hello["device_id"],
-                    "session_id": hello["session_id"],
-                    "target": "fake",
-                    "text": "你好，检查链路",
-                },
-                token=token,
-            )
+            with redirect_stdout(logs):
+                _wait_for_health(host, port)
+                base = f"http://{host}:{port}"
+                token = "dev-pairing-token"
+                hello = _post_json(
+                    f"{base}/device/hello",
+                    {
+                        "device_id": "sim-esp32-c3",
+                        "name": "simulator",
+                        "firmware": "simulator",
+                        "capabilities": ["display", "text"],
+                    },
+                    token=token,
+                )
+                assert hello["state"] == "ready"
+                assert hello["paired"] is True
+                missing_auth = _post_json_expect_error(
+                    f"{base}/device/command",
+                    {
+                        "device_id": hello["device_id"],
+                        "session_id": hello["session_id"],
+                        "target": "fake",
+                        "text": "这条不应该执行",
+                    },
+                )
+                assert missing_auth["status"] == 401
+                assert missing_auth["payload"]["error"] == "invalid device token"
+                command = _post_json(
+                    f"{base}/device/command",
+                    {
+                        "device_id": hello["device_id"],
+                        "session_id": hello["session_id"],
+                        "target": "fake",
+                        "text": "你好，检查链路",
+                    },
+                    token=token,
+                )
             assert command["state"] == "result"
             assert "Fake 后端" in command["result"]["text"]
+            log_text = logs.getvalue()
+            assert "GET /healthz -> 200" in log_text
+            assert "POST /device/hello -> 200" in log_text
+            assert "POST /device/command -> 401" in log_text
+            assert token not in log_text
+            assert "你好，检查链路" not in log_text
             with sqlite3.connect(db) as conn:
                 pairing = conn.execute(
                     "SELECT device_id, name, token_hash, firmware, capabilities_json FROM device_pairings WHERE device_id = ?",
