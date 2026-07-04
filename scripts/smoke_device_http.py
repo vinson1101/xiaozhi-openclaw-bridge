@@ -96,6 +96,23 @@ def main() -> None:
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+        secure_db = Path(tmp) / "secure.sqlite3"
+        secure_server = build_server("127.0.0.1", 0, secure_db, require_device_token=True)
+        secure_thread = threading.Thread(target=secure_server.serve_forever, daemon=True)
+        secure_thread.start()
+        try:
+            host, port = secure_server.server_address
+            _wait_for_health(host, port)
+            denied = _post_json_expect_error(
+                f"http://{host}:{port}/device/hello",
+                {"device_id": "needs-token"},
+            )
+            assert denied["status"] == 401
+            assert denied["payload"]["error"] == "device token is required"
+        finally:
+            secure_server.shutdown()
+            secure_server.server_close()
+            secure_thread.join(timeout=2)
     print("smoke_device_http ok")
 
 

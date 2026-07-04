@@ -32,6 +32,15 @@ sha256:<hash>
 
 It does not store the raw token in SQLite or session events.
 
+Deployment can enforce tokened pairing with:
+
+```text
+--require-device-token
+```
+
+When this flag is set, `POST /device/hello` without a Bearer token returns
+`401 device token is required`.
+
 ## Validation
 
 ```bash
@@ -41,6 +50,7 @@ python3 scripts/smoke_device_http.py
 The smoke test verifies:
 
 - first hello creates a pairing row,
+- require-token mode rejects hello without a token,
 - the pairing stores a token hash, not the raw token,
 - command without the token is rejected,
 - command with the token still routes through the fake backend,

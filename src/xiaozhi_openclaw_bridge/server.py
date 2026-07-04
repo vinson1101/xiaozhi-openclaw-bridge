@@ -14,7 +14,8 @@ from xiaozhi_openclaw_bridge.store import EventStore
 
 
 class BridgeApplication:
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, require_device_token: bool = False) -> None:
+        self.require_device_token = require_device_token
         self.store = EventStore(db_path)
         self.store.init()
 
@@ -49,6 +50,8 @@ class BridgeApplication:
 
         device_id = str(payload.get("device_id") or "").strip() or f"device-{uuid4().hex[:8]}"
         token_hash = _token_hash(_bearer_token(headers))
+        if self.require_device_token and not token_hash:
+            return 401, {"error": "device token is required"}
         pairing = self.store.get_device_pairing(device_id)
         if pairing is not None:
             auth_error = _authorize_pairing(pairing["token_hash"], token_hash)
@@ -173,8 +176,8 @@ class BridgeApplication:
         }
 
 
-def build_server(host: str, port: int, db_path: str | Path) -> ThreadingHTTPServer:
-    app = BridgeApplication(db_path)
+def build_server(host: str, port: int, db_path: str | Path, require_device_token: bool = False) -> ThreadingHTTPServer:
+    app = BridgeApplication(db_path, require_device_token=require_device_token)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
@@ -254,8 +257,9 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--db", default="data/bridge.sqlite3")
+    parser.add_argument("--require-device-token", action="store_true")
     args = parser.parse_args()
-    server = build_server(args.host, args.port, args.db)
+    server = build_server(args.host, args.port, args.db, require_device_token=args.require_device_token)
     print(f"listening on http://{args.host}:{args.port}")
     server.serve_forever()
 

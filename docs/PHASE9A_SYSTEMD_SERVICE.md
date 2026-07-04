@@ -14,7 +14,7 @@ deploy/systemd/xob-bridge.service
 The unit runs:
 
 ```text
-python3 -m xiaozhi_openclaw_bridge.server --host 0.0.0.0 --port 8788 --db /var/lib/xob-bridge/bridge.sqlite3
+python3 -m xiaozhi_openclaw_bridge.server --host 0.0.0.0 --port 8788 --db /var/lib/xob-bridge/bridge.sqlite3 --require-device-token
 ```
 
 This is an HTTP-only development service. It is useful for a LAN host or a
@@ -41,6 +41,9 @@ Then configure the board `bridge_url` to the reachable host URL, for example:
 http://<reachable-host>:8788
 ```
 
+Also configure a non-empty `device_token`; deployment mode rejects device hello
+without a Bearer token.
+
 Before changing the board, verify that same URL from a host on the same network
 path:
 
@@ -53,6 +56,8 @@ python3 scripts/check_bridge_health.py http://<reachable-host>:8788
 - No TLS or reverse proxy yet.
 - No public-internet hardening yet.
 - No credentials or API keys in the unit.
+- Device token enforcement is enabled, but token creation and rotation are still
+  manual provisioning steps.
 - Keep OpenClaw, Hermas, Zebra, and provider secrets in host environment or
   service overrides, not in Git.
 

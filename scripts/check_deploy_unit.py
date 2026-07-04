@@ -21,14 +21,19 @@ def main() -> None:
         "--host 0.0.0.0",
         "--port 8788",
         "--db /var/lib/xob-bridge/bridge.sqlite3",
+        "--require-device-token",
         "Restart=on-failure",
     ]:
         assert token in text, f"missing {token}"
-    assert "token" not in text.lower(), "service unit must not contain secrets"
+    assert "Bearer " not in text, "service unit must not contain bearer secrets"
+    assert "device_token=" not in text, "service unit must not contain raw device tokens"
     override = LOCALHOST_OVERRIDE.read_text()
     assert "--host 127.0.0.1" in override, "localhost override must bind Bridge locally"
+    assert "--require-device-token" in override, "localhost override must require device tokens"
     nginx = NGINX.read_text()
     assert "proxy_pass http://127.0.0.1:8788;" in nginx, "nginx must proxy to local Bridge"
+    assert "location /device/" in nginx, "nginx must expose device API"
+    assert "location / {" in nginx and "return 404;" in nginx, "nginx must not expose all routes"
     assert "ssl_certificate" in nginx, "nginx sample must terminate TLS"
     print("check_deploy_unit ok")
 

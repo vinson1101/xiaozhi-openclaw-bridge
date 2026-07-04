@@ -43,6 +43,7 @@
 - Bridge health check script exists in `scripts/check_bridge_health.py`.
 - SQLite backup/restore helper exists in `scripts/bridge_db_backup.py`.
 - Nginx reverse proxy sample exists in `deploy/nginx/xob-bridge.conf`.
+- Deployment service requires device tokens for pairing.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -253,7 +254,7 @@ Goal: make VPS mode safe enough for real use.
 
 Tasks:
 
-- [ ] Add pairing flow.
+- [x] Add pairing flow.
 - [ ] Add token rotation.
 - [x] Add reverse proxy sample.
 - [x] Add service unit or container deployment.

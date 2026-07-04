@@ -18,7 +18,7 @@ http://127.0.0.1:8788
 ```
 
 `xob-bridge-localhost.conf` is a systemd override that makes the Bridge listen
-only on localhost when nginx is in front.
+only on localhost when nginx is in front. It keeps `--require-device-token`.
 
 ## Install Sketch
 
@@ -40,6 +40,9 @@ Then configure the board `bridge_url` to:
 ```text
 https://voice.example.com
 ```
+
+The nginx sample exposes only `/healthz` and `/device/`. It does not proxy the
+generic `/command` route to the public internet.
 
 ## Boundaries
 
