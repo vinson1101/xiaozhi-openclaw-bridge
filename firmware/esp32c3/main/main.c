@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_check.h"
@@ -25,6 +26,7 @@ static const char *TAG = "xob";
 static EventGroupHandle_t wifi_events;
 static const int WIFI_CONNECTED_BIT = BIT0;
 static const int WIFI_FAIL_BIT = BIT1;
+static int wifi_retry_count;
 static volatile xob_eye_state_t avatar_eye_state = XOB_EYES_IDLE;
 static volatile xob_screen_status_t avatar_wifi_status = XOB_SCREEN_STATUS_OFF;
 static volatile xob_screen_status_t avatar_bridge_status = XOB_SCREEN_STATUS_OFF;
@@ -91,12 +93,88 @@ static esp_err_t load_config(app_config_t *config) {
 
 static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_id, void *event_data) {
     if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
+        wifi_retry_count = 0;
     } else if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        xEventGroupSetBits(wifi_events, WIFI_FAIL_BIT);
+        const wifi_event_sta_disconnected_t *disconnected = (const wifi_event_sta_disconnected_t *)event_data;
+        if (wifi_retry_count < 8) {
+            wifi_retry_count++;
+            ESP_LOGW(TAG, "WiFi disconnected, retrying (%d/8), reason=%d", wifi_retry_count, disconnected->reason);
+            esp_wifi_connect();
+        } else {
+            ESP_LOGW(TAG, "WiFi connection failed, reason=%d", disconnected->reason);
+            xEventGroupSetBits(wifi_events, WIFI_FAIL_BIT);
+        }
     } else if (base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        wifi_retry_count = 0;
         xEventGroupSetBits(wifi_events, WIFI_CONNECTED_BIT);
     }
+}
+
+static bool ssid_matches(const wifi_ap_record_t *ap, const char *target_ssid) {
+    return strncmp((const char *)ap->ssid, target_ssid, sizeof(ap->ssid)) == 0;
+}
+
+static void log_target_scan_result(const char *target_ssid) {
+    wifi_scan_config_t scan_config = {
+        .show_hidden = true,
+    };
+    esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "WiFi scan failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    uint16_t ap_count = 0;
+    err = esp_wifi_scan_get_ap_num(&ap_count);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "WiFi scan count failed: %s", esp_err_to_name(err));
+        esp_wifi_clear_ap_list();
+        return;
+    }
+    if (ap_count == 0) {
+        ESP_LOGI(TAG, "WiFi scan: aps=0 target_matches=0");
+        return;
+    }
+
+    wifi_ap_record_t *records = calloc(ap_count, sizeof(*records));
+    if (records == NULL) {
+        ESP_LOGW(TAG, "WiFi scan results skipped: no memory");
+        esp_wifi_clear_ap_list();
+        return;
+    }
+
+    uint16_t records_to_read = ap_count;
+    err = esp_wifi_scan_get_ap_records(&records_to_read, records);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "WiFi scan records failed: %s", esp_err_to_name(err));
+        free(records);
+        esp_wifi_clear_ap_list();
+        return;
+    }
+
+    uint16_t matches = 0;
+    int8_t best_rssi = -127;
+    uint8_t best_channel = 0;
+    wifi_auth_mode_t best_authmode = WIFI_AUTH_OPEN;
+    for (uint16_t i = 0; i < records_to_read; i++) {
+        if (!ssid_matches(&records[i], target_ssid)) {
+            continue;
+        }
+        matches++;
+        if (records[i].rssi > best_rssi) {
+            best_rssi = records[i].rssi;
+            best_channel = records[i].primary;
+            best_authmode = records[i].authmode;
+        }
+    }
+    if (matches > 0) {
+        ESP_LOGI(TAG, "WiFi scan: aps=%u target_matches=%u best_channel=%u best_rssi=%d auth=%d",
+                 ap_count, matches, best_channel, best_rssi, best_authmode);
+    } else {
+        ESP_LOGI(TAG, "WiFi scan: aps=%u target_matches=0", ap_count);
+    }
+
+    free(records);
 }
 
 static esp_err_t connect_wifi(const app_config_t *config) {
@@ -110,18 +188,29 @@ static esp_err_t connect_wifi(const app_config_t *config) {
     esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
+    init.nvs_enable = false;
     ESP_RETURN_ON_ERROR(esp_wifi_init(&init), TAG, "wifi init");
+    ESP_RETURN_ON_ERROR(esp_wifi_set_storage(WIFI_STORAGE_RAM), TAG, "wifi storage");
+    wifi_country_t country = {
+        .cc = {'C', 'N', ' '},
+        .schan = 1,
+        .nchan = 13,
+        .policy = WIFI_COUNTRY_POLICY_MANUAL,
+    };
+    ESP_RETURN_ON_ERROR(esp_wifi_set_country(&country), TAG, "wifi country");
     ESP_RETURN_ON_ERROR(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL, NULL), TAG, "wifi event");
     ESP_RETURN_ON_ERROR(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL, NULL), TAG, "ip event");
 
     wifi_config_t wifi_config = {0};
     strncpy((char *)wifi_config.sta.ssid, config->wifi_ssid, sizeof(wifi_config.sta.ssid) - 1);
     strncpy((char *)wifi_config.sta.password, config->wifi_password, sizeof(wifi_config.sta.password) - 1);
-    wifi_config.sta.threshold.authmode = strlen(config->wifi_password) > 0 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    wifi_config.sta.threshold.authmode = strlen(config->wifi_password) > 0 ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "wifi mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wifi_config), TAG, "wifi config");
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "wifi start");
+    log_target_scan_result(config->wifi_ssid);
+    ESP_RETURN_ON_ERROR(esp_wifi_connect(), TAG, "wifi connect");
 
     EventBits_t bits = xEventGroupWaitBits(
         wifi_events,
@@ -285,7 +374,8 @@ void app_main(void) {
     }
     set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_OFF);
     if (connect_wifi(&config) != ESP_OK) {
-        set_avatar_state(XOB_EYES_ERROR, XOB_SCREEN_STATUS_ERROR, XOB_SCREEN_STATUS_OFF);
+        set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_ERROR, XOB_SCREEN_STATUS_OFF);
+        xob_run_serial_provisioning();
         return;
     }
     set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_PENDING);
@@ -296,7 +386,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "wifi_ssid=%s", strlen(config.wifi_ssid) > 0 ? "configured" : "empty");
     err = post_device_hello(&config);
     if (err != ESP_OK) {
-        set_avatar_state(XOB_EYES_ERROR, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_ERROR);
+        set_avatar_state(XOB_EYES_IDLE, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_ERROR);
         return;
     }
     set_avatar_state(XOB_EYES_IDLE, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_OK);

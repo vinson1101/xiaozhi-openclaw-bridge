@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "driver/usb_serial_jtag.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -13,33 +14,53 @@
 #include "provisioning.h"
 
 static const char *TAG = "xob_prov";
+static bool usb_serial_ready;
 
-static bool trim_newline(char *value) {
-    size_t end = strcspn(value, "\r\n");
-    bool complete = value[end] != '\0';
-    value[end] = '\0';
-    return complete;
-}
-
-static void discard_line(void) {
-    int ch;
-    while ((ch = getchar()) != '\n' && ch != '\r' && ch != EOF) {
+static esp_err_t ensure_usb_serial(void) {
+    if (usb_serial_ready) {
+        return ESP_OK;
     }
+    usb_serial_jtag_driver_config_t config = {
+        .tx_buffer_size = 256,
+        .rx_buffer_size = 256,
+    };
+    esp_err_t err = usb_serial_jtag_driver_install(&config);
+    if (err == ESP_ERR_INVALID_STATE) {
+        err = ESP_OK;
+    }
+    if (err == ESP_OK) {
+        usb_serial_ready = true;
+    }
+    return err;
 }
 
 static bool read_line(const char *label, char *out, size_t out_len) {
+    if (ensure_usb_serial() != ESP_OK) {
+        return false;
+    }
     printf("%s: ", label);
     fflush(stdout);
-    if (fgets(out, out_len, stdin) == NULL) {
-        return false;
+
+    size_t len = 0;
+    while (true) {
+        char ch;
+        int read = usb_serial_jtag_read_bytes(&ch, 1, pdMS_TO_TICKS(1000));
+        if (read <= 0) {
+            continue;
+        }
+        if (ch == '\n' || ch == '\r') {
+            out[len] = '\0';
+            return true;
+        }
+        if (len + 1 >= out_len) {
+            out[0] = '\0';
+            ESP_LOGW(TAG, "%s is too long; retrying", label);
+            while (usb_serial_jtag_read_bytes(&ch, 1, pdMS_TO_TICKS(10)) > 0 && ch != '\n' && ch != '\r') {
+            }
+            return false;
+        }
+        out[len++] = ch;
     }
-    if (!trim_newline(out)) {
-        discard_line();
-        out[0] = '\0';
-        ESP_LOGW(TAG, "%s is too long; retrying", label);
-        return false;
-    }
-    return true;
 }
 
 static esp_err_t write_config(const char *bridge_url, const char *device_token, const char *wifi_ssid, const char *wifi_password) {

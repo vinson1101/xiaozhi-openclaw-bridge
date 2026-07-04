@@ -12,9 +12,9 @@ Phase 6P adds a lightweight on-screen state layer for the custom firmware.
 - Drive eye state from lifecycle:
   - provisioning: listening
   - WiFi connecting: thinking
-  - WiFi failed: error
+  - WiFi failed: listening, with the WiFi marker red
   - Bridge hello pending: thinking
-  - Bridge hello failed: error
+  - Bridge hello failed: idle, with the Bridge marker red
   - Bridge hello complete: idle
 
 Status colors:

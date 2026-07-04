@@ -175,6 +175,8 @@ Tasks:
 - [x] Validate ST7789 firmware build locally, without flashing.
 - [x] Implement HTTP JSON `hello`.
 - [x] Display Bridge connection state.
+- [x] Add safe WiFi scan diagnostics and USB serial fallback after WiFi failure.
+- [ ] Implement temporary AP plus local HTTP config page for normal WiFi/Bridge setup.
 - [ ] Provision WiFi/Bridge config on the flashed board and validate one real `/device/hello` against a local Bridge.
 
 Acceptance:
@@ -249,10 +251,12 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 6Q:
+Continue Phase 6Q after resolving 2.4 GHz SSID visibility:
 
 ```text
 provision the board against a local Bridge and validate a real /device/hello
 ```
+
+If WiFi changes remain cumbersome, build the temporary AP plus local HTTP config page before continuing Phase 6Q validation.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.
