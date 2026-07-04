@@ -79,6 +79,10 @@ Firmware exposes a serial `:ws` probe for the same handshake. It supports the
 current plain `http://` Bridge URL path only; `wss://` is deferred until the
 firmware has a TLS WebSocket client path.
 
+Firmware also exposes `:talk`, which sends `listen/start`, one small binary
+test frame, and `listen/stop`, then waits for `stt` and `tts` text frames. It is
+a protocol probe, not real microphone capture.
+
 Firmware also exposes `:status` as a safe diagnostic command. It reports only
 whether config values exist, the HTTP port, and a non-secret host hash. It does
 not print the raw Bridge URL, token, WiFi SSID, password, device id, or MAC.

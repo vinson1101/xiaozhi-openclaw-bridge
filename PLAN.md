@@ -55,6 +55,7 @@
 - Bridge accepts XiaoZhi-compatible WebSocket hello at `/device/ws`.
 - Bridge accepts XiaoZhi-style WebSocket `listen` controls and binary audio frames, then returns `stt` / `tts` text frames.
 - Firmware serial `:ws` probe performs the XiaoZhi-compatible WebSocket hello handshake.
+- Firmware serial `:talk` probe sends a XiaoZhi-style listen/audio/stop cycle and waits for `stt` / `tts` text frames.
 - Firmware serial `:status` reports safe Bridge endpoint diagnostics without printing raw secrets.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
 - Deployment units disable the generic `/command` route for public device hosts.

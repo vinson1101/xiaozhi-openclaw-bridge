@@ -661,8 +661,7 @@ static esp_err_t recv_exact(int sock, void *buffer, size_t len) {
     return ESP_OK;
 }
 
-static esp_err_t websocket_send_masked_text(int sock, const char *text) {
-    size_t len = strlen(text);
+static esp_err_t websocket_send_masked_frame(int sock, uint8_t opcode, const void *payload, size_t len) {
     if (len >= 256) {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -670,7 +669,7 @@ static esp_err_t websocket_send_masked_text(int sock, const char *text) {
     uint32_t random = esp_random();
     memcpy(mask, &random, sizeof(mask));
 
-    uint8_t header[8] = {0x81, 0, 0, 0, mask[0], mask[1], mask[2], mask[3]};
+    uint8_t header[8] = {(uint8_t)(0x80 | opcode), 0, 0, 0, mask[0], mask[1], mask[2], mask[3]};
     size_t header_len = 6;
     if (len < 126) {
         header[1] = 0x80 | (uint8_t)len;
@@ -687,11 +686,16 @@ static esp_err_t websocket_send_masked_text(int sock, const char *text) {
     if (send(sock, header, header_len, 0) != (int)header_len) {
         return ESP_FAIL;
     }
-    char masked[256];
+    const uint8_t *bytes = (const uint8_t *)payload;
+    uint8_t masked[256];
     for (size_t i = 0; i < len; i++) {
-        masked[i] = text[i] ^ mask[i % 4];
+        masked[i] = bytes[i] ^ mask[i % 4];
     }
     return send(sock, masked, len, 0) == (int)len ? ESP_OK : ESP_FAIL;
+}
+
+static esp_err_t websocket_send_masked_text(int sock, const char *text) {
+    return websocket_send_masked_frame(sock, 1, text, strlen(text));
 }
 
 static esp_err_t recv_websocket_text(int sock, char *out, size_t out_len) {
@@ -719,7 +723,17 @@ static esp_err_t recv_websocket_text(int sock, char *out, size_t out_len) {
     return ESP_OK;
 }
 
-static esp_err_t probe_xiaozhi_websocket(const app_config_t *config) {
+static bool json_contains_string(const char *json, const char *key, const char *value) {
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\": \"%s\"", key, value);
+    if (strstr(json, needle) != NULL) {
+        return true;
+    }
+    snprintf(needle, sizeof(needle), "\"%s\":\"%s\"", key, value);
+    return strstr(json, needle) != NULL;
+}
+
+static esp_err_t probe_xiaozhi_websocket(const app_config_t *config, bool send_talk_probe) {
     bridge_endpoint_t endpoint = {0};
     if (!bridge_http_endpoint(config->bridge_url, &endpoint)) {
         ESP_LOGW(TAG, "websocket probe supports http:// Bridge URLs only");
@@ -758,11 +772,12 @@ static esp_err_t probe_xiaozhi_websocket(const app_config_t *config) {
     if (strlen(config->device_token) > 0) {
         snprintf(auth, sizeof(auth), "Authorization: Bearer %s\r\n", config->device_token);
     }
+    const char *target = strlen(config->default_target) > 0 ? config->default_target : "fake";
     char request[512];
     snprintf(
         request,
         sizeof(request),
-        "GET /device/ws HTTP/1.1\r\n"
+        "GET /device/ws?target=%s HTTP/1.1\r\n"
         "Host: %s:%u\r\n"
         "Upgrade: websocket\r\n"
         "Connection: Upgrade\r\n"
@@ -773,6 +788,7 @@ static esp_err_t probe_xiaozhi_websocket(const app_config_t *config) {
         "Device-Id: %s\r\n"
         "Client-Id: %s\r\n"
         "\r\n",
+        target,
         endpoint.host,
         endpoint.port,
         auth,
@@ -817,14 +833,44 @@ static esp_err_t probe_xiaozhi_websocket(const app_config_t *config) {
         "\"sample_rate\":16000,\"channels\":1,\"frame_duration\":60}}";
     err = websocket_send_masked_text(sock, hello);
     if (err == ESP_OK) {
-        char message[256];
+        char message[384];
         err = recv_websocket_text(sock, message, sizeof(message));
         if (err == ESP_OK &&
-            strstr(message, "\"type\": \"hello\"") != NULL &&
-            strstr(message, "\"transport\": \"websocket\"") != NULL) {
+            json_contains_string(message, "type", "hello") &&
+            json_contains_string(message, "transport", "websocket")) {
             ESP_LOGI(TAG, "websocket hello complete");
         } else {
             err = ESP_FAIL;
+        }
+    }
+    if (err == ESP_OK && send_talk_probe) {
+        static const uint8_t audio[160] = {0};
+        const char listen_start[] = "{\"session_id\":\"\",\"type\":\"listen\",\"state\":\"start\",\"mode\":\"manual\"}";
+        const char listen_stop[] = "{\"session_id\":\"\",\"type\":\"listen\",\"state\":\"stop\"}";
+        err = websocket_send_masked_text(sock, listen_start);
+        if (err == ESP_OK) {
+            err = websocket_send_masked_frame(sock, 2, audio, sizeof(audio));
+        }
+        if (err == ESP_OK) {
+            err = websocket_send_masked_text(sock, listen_stop);
+        }
+        if (err == ESP_OK) {
+            char message[384];
+            err = recv_websocket_text(sock, message, sizeof(message));
+            if (err == ESP_OK && json_contains_string(message, "type", "stt")) {
+                ESP_LOGI(TAG, "websocket stt received");
+            } else {
+                err = ESP_FAIL;
+            }
+            for (int i = 0; err == ESP_OK && i < 3; i++) {
+                err = recv_websocket_text(sock, message, sizeof(message));
+                if (err != ESP_OK || !json_contains_string(message, "type", "tts")) {
+                    err = ESP_FAIL;
+                }
+            }
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "websocket talk probe complete");
+            }
         }
     }
     close(sock);
@@ -889,7 +935,22 @@ static void serial_command_task(void *arg) {
             }
             if (strcmp(line, ":ws") == 0) {
                 set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
-                err = probe_xiaozhi_websocket(config);
+                err = probe_xiaozhi_websocket(config, false);
+                set_avatar_state(
+                    err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
+                    avatar_wifi_status,
+                    err == ESP_OK ? XOB_SCREEN_STATUS_OK : XOB_SCREEN_STATUS_ERROR
+                );
+                if (err == ESP_OK) {
+                    vTaskDelay(pdMS_TO_TICKS(1200));
+                    set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+                }
+                len = 0;
+                continue;
+            }
+            if (strcmp(line, ":talk") == 0) {
+                set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+                err = probe_xiaozhi_websocket(config, true);
                 set_avatar_state(
                     err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
                     avatar_wifi_status,
