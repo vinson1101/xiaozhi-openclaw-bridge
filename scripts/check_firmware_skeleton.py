@@ -32,9 +32,9 @@ def main() -> None:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED if not path.exists()]
     assert not missing, f"missing firmware files: {', '.join(missing)}"
     main_c = (FW / "main" / "main.c").read_text()
-    for token in ["nvs_flash_init", "bridge_url", "device_token", "wifi_ssid", "post_device_hello", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "XOB_BUTTON_LISTEN_GPIO", "esp32c3"]:
+    for token in ["nvs_flash_init", "bridge_url", "device_token", "wifi_ssid", "post_device_hello", "post_device_command", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "XOB_BUTTON_LISTEN_GPIO", "esp32c3"]:
         assert token in main_c or token in (FW / "sdkconfig.defaults").read_text(), f"missing {token}"
-    for token in ["driver/gpio.h", "GPIO_NUM_7", "GPIO_NUM_8", "GPIO_NUM_9", "button_task"]:
+    for token in ["driver/gpio.h", "driver/usb_serial_jtag.h", "GPIO_NUM_7", "GPIO_NUM_8", "GPIO_NUM_9", "button_task", "serial_command_task"]:
         assert token in main_c, f"missing {token}"
     assert "nvs_flash_erase" not in main_c, "firmware must not erase stock NVS automatically"
     eyes_c = (FW / "main" / "eyes.c").read_text()

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "driver/gpio.h"
+#include "driver/usb_serial_jtag.h"
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -64,6 +65,8 @@ typedef struct {
     char wifi_password[65];
 } app_config_t;
 
+static app_config_t active_config;
+
 typedef struct {
     const char *label;
     SemaphoreHandle_t done;
@@ -71,6 +74,12 @@ typedef struct {
     uint32_t received;
     uint32_t duration_ms;
 } ping_result_t;
+
+static void set_avatar_state(
+    xob_eye_state_t eye_state,
+    xob_screen_status_t wifi_status,
+    xob_screen_status_t bridge_status
+);
 
 static esp_err_t read_string(nvs_handle_t nvs, const char *key, char *out, size_t out_len) {
     size_t required = out_len;
@@ -448,6 +457,132 @@ static esp_err_t post_device_hello(const app_config_t *config) {
     return (status >= 200 && status < 300) ? ESP_OK : ESP_FAIL;
 }
 
+static bool json_escape(char *out, size_t out_len, const char *in) {
+    size_t pos = 0;
+    for (const unsigned char *p = (const unsigned char *)in; *p != '\0'; p++) {
+        if (*p == '"' || *p == '\\') {
+            if (pos + 2 >= out_len) {
+                return false;
+            }
+            out[pos++] = '\\';
+            out[pos++] = (char)*p;
+        } else if (*p < 0x20) {
+            return false;
+        } else {
+            if (pos + 1 >= out_len) {
+                return false;
+            }
+            out[pos++] = (char)*p;
+        }
+    }
+    out[pos] = '\0';
+    return true;
+}
+
+static esp_err_t post_device_command(const app_config_t *config, const char *text) {
+    char escaped_text[260];
+    if (!json_escape(escaped_text, sizeof(escaped_text), text)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char url[180];
+    snprintf(url, sizeof(url), "%s/device/command", config->bridge_url);
+
+    char device_id[24];
+    make_device_id(device_id, sizeof(device_id));
+
+    char body[384];
+    snprintf(
+        body,
+        sizeof(body),
+        "{\"device_id\":\"%s\",\"text\":\"%s\"}",
+        device_id,
+        escaped_text
+    );
+
+    esp_http_client_config_t http_config = {
+        .url = url,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 10000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&http_config);
+    if (client == NULL) {
+        return ESP_FAIL;
+    }
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    if (strlen(config->device_token) > 0) {
+        char auth[96];
+        snprintf(auth, sizeof(auth), "Bearer %s", config->device_token);
+        esp_http_client_set_header(client, "Authorization", auth);
+    }
+    esp_http_client_set_post_field(client, body, strlen(body));
+
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "device command failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(TAG, "device command status=%d", status);
+    return (status >= 200 && status < 300) ? ESP_OK : ESP_FAIL;
+}
+
+static esp_err_t ensure_usb_command_serial(void) {
+    usb_serial_jtag_driver_config_t config = {
+        .tx_buffer_size = 256,
+        .rx_buffer_size = 256,
+    };
+    esp_err_t err = usb_serial_jtag_driver_install(&config);
+    return err == ESP_ERR_INVALID_STATE ? ESP_OK : err;
+}
+
+static void serial_command_task(void *arg) {
+    const app_config_t *config = (const app_config_t *)arg;
+    esp_err_t err = ensure_usb_command_serial();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "serial command input unavailable: %s", esp_err_to_name(err));
+        vTaskDelete(NULL);
+        return;
+    }
+
+    puts("XOB serial text command ready. Type text and press Enter.");
+    char line[181];
+    size_t len = 0;
+    while (true) {
+        char ch;
+        int read = usb_serial_jtag_read_bytes(&ch, 1, pdMS_TO_TICKS(500));
+        if (read <= 0) {
+            continue;
+        }
+        if (ch == '\r' || ch == '\n') {
+            if (len == 0) {
+                continue;
+            }
+            line[len] = '\0';
+            set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
+            err = post_device_command(config, line);
+            set_avatar_state(
+                err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
+                avatar_wifi_status,
+                err == ESP_OK ? XOB_SCREEN_STATUS_OK : XOB_SCREEN_STATUS_ERROR
+            );
+            len = 0;
+            continue;
+        }
+        if (len + 1 < sizeof(line)) {
+            line[len++] = ch;
+        }
+    }
+}
+
+static void start_serial_command_task(const app_config_t *config) {
+    BaseType_t created = xTaskCreate(serial_command_task, "xob_serial_cmd", 4096, (void *)config, 2, NULL);
+    if (created != pdPASS) {
+        ESP_LOGW(TAG, "serial command task not started");
+    }
+}
+
 static bool avatar_eyes_equal(const xob_eyes_frame_t *left, const xob_eyes_frame_t *right) {
     return left->left_x == right->left_x &&
            left->right_x == right->right_x &&
@@ -642,27 +777,28 @@ void app_main(void) {
         start_button_task();
     }
 
-    app_config_t config = {0};
-    if (load_config(&config) != ESP_OK) {
+    memset(&active_config, 0, sizeof(active_config));
+    if (load_config(&active_config) != ESP_OK) {
         set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_OFF);
         xob_start_ap_provisioning();
         xob_run_serial_provisioning();
         return;
     }
     set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_OFF);
-    if (connect_wifi(&config) != ESP_OK) {
+    if (connect_wifi(&active_config) != ESP_OK) {
         set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_ERROR, XOB_SCREEN_STATUS_OFF);
         xob_start_ap_provisioning();
         xob_run_serial_provisioning();
         return;
     }
     set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_PENDING);
+    start_serial_command_task(&active_config);
 
     ESP_LOGI(TAG, "XOB firmware skeleton ready");
-    ESP_LOGI(TAG, "bridge_url=%s", strlen(config.bridge_url) > 0 ? "configured" : "empty");
-    ESP_LOGI(TAG, "device_token=%s", strlen(config.device_token) > 0 ? "configured" : "empty");
-    ESP_LOGI(TAG, "wifi_ssid=%s", strlen(config.wifi_ssid) > 0 ? "configured" : "empty");
-    err = post_device_hello(&config);
+    ESP_LOGI(TAG, "bridge_url=%s", strlen(active_config.bridge_url) > 0 ? "configured" : "empty");
+    ESP_LOGI(TAG, "device_token=%s", strlen(active_config.device_token) > 0 ? "configured" : "empty");
+    ESP_LOGI(TAG, "wifi_ssid=%s", strlen(active_config.wifi_ssid) > 0 ? "configured" : "empty");
+    err = post_device_hello(&active_config);
     if (err != ESP_OK) {
         set_avatar_state(XOB_EYES_IDLE, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_ERROR);
         return;

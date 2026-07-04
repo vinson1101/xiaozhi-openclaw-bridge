@@ -85,7 +85,7 @@ Agent 后端
 - 设备身份和配对 token。
 - HTTP JSON 客户端，先发送 Bridge hello；WebSocket 等音频流阶段再加。
 - ST7789 屏幕状态 UI。
-- 按键触发录音。
+- 按键触发录音；未来可把 `你好，小元` 作为中文唤醒/ASR 触发短语。
 - 音频上传。
 - TTS 或音频播放。
 - 电量、WiFi、错误状态上报。

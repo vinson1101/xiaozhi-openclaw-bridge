@@ -61,3 +61,16 @@ ssid_or_bssid_log_present=false
 ```
 
 Real physical button placement and press events remain pending on-board testing.
+
+## Known Bug
+
+Short-pressing the physical middle button does not visibly change the avatar
+state on the current flashed board, even though GPIO 7/8/9 initialize as inputs.
+
+Likely causes to verify later:
+
+- the physical middle button is not GPIO8,
+- the press is handled by board power circuitry before firmware sees it,
+- a later state transition overwrites the listening frame too quickly.
+
+This is deferred because it does not block Bridge command or audio-path work.

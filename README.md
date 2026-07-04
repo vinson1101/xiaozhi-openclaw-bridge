@@ -38,6 +38,7 @@ Project documents:
 - [docs/PHASE6Q_WIFI_PROVISIONING_VALIDATION.md](docs/PHASE6Q_WIFI_PROVISIONING_VALIDATION.md): WiFi provisioning validation
 - [docs/PHASE6R_AP_PROVISIONING.md](docs/PHASE6R_AP_PROVISIONING.md): temporary AP provisioning
 - [docs/PHASE6S_BUTTON_CONTROLS.md](docs/PHASE6S_BUTTON_CONTROLS.md): three-button controls
+- [docs/PHASE6T_SERIAL_TEXT_COMMAND.md](docs/PHASE6T_SERIAL_TEXT_COMMAND.md): board-side serial text command
 - [docs/M5STACK_REFERENCE.md](docs/M5STACK_REFERENCE.md): M5Stack borrowing boundary
 - [docs/PROVISIONING.md](docs/PROVISIONING.md): configuration and provisioning plan
 - [PLAN.md](PLAN.md): milestone plan
