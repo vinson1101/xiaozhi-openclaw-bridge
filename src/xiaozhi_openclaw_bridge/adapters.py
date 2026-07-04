@@ -26,8 +26,10 @@ class AgentResponse:
 
 @dataclass(frozen=True)
 class OpenClawConfig:
+    env_prefix: str
     ssh_target: str
     ssh_bin: str
+    cli_bin: str
     ssh_key: str | None
     known_hosts: str | None
     agent: str | None
@@ -37,18 +39,20 @@ class OpenClawConfig:
     command_timeout: int
 
     @classmethod
-    def from_env(cls) -> "OpenClawConfig":
+    def from_env(cls, env_prefix: str = "XOB_OPENCLAW") -> "OpenClawConfig":
         return cls(
-            ssh_target=os.environ.get("XOB_OPENCLAW_SSH_TARGET", "").strip(),
-            ssh_bin=os.environ.get("XOB_OPENCLAW_SSH_BIN", "ssh").strip() or "ssh",
-            ssh_key=_blank_to_none(os.environ.get("XOB_OPENCLAW_SSH_KEY")),
-            known_hosts=_blank_to_none(os.environ.get("XOB_OPENCLAW_SSH_KNOWN_HOSTS")),
-            agent=_blank_to_none(os.environ.get("XOB_OPENCLAW_AGENT")),
-            enable_commands=_truthy(os.environ.get("XOB_OPENCLAW_ENABLE_COMMANDS")),
-            session_prefix=os.environ.get("XOB_OPENCLAW_SESSION_PREFIX", "xiaozhi-bridge").strip()
+            env_prefix=env_prefix,
+            ssh_target=os.environ.get(f"{env_prefix}_SSH_TARGET", "").strip(),
+            ssh_bin=os.environ.get(f"{env_prefix}_SSH_BIN", "ssh").strip() or "ssh",
+            cli_bin=os.environ.get(f"{env_prefix}_CLI_BIN", "openclaw").strip() or "openclaw",
+            ssh_key=_blank_to_none(os.environ.get(f"{env_prefix}_SSH_KEY")),
+            known_hosts=_blank_to_none(os.environ.get(f"{env_prefix}_SSH_KNOWN_HOSTS")),
+            agent=_blank_to_none(os.environ.get(f"{env_prefix}_AGENT")),
+            enable_commands=_truthy(os.environ.get(f"{env_prefix}_ENABLE_COMMANDS")),
+            session_prefix=os.environ.get(f"{env_prefix}_SESSION_PREFIX", "xiaozhi-bridge").strip()
             or "xiaozhi-bridge",
-            connect_timeout=_int_env("XOB_OPENCLAW_CONNECT_TIMEOUT", 10),
-            command_timeout=_int_env("XOB_OPENCLAW_TIMEOUT", 600),
+            connect_timeout=_int_env(f"{env_prefix}_CONNECT_TIMEOUT", 10),
+            command_timeout=_int_env(f"{env_prefix}_TIMEOUT", 600),
         )
 
 
@@ -68,15 +72,16 @@ class FakeAdapter:
 class OpenClawSshAdapter:
     target = "openclaw"
 
-    def __init__(self, config: OpenClawConfig | None = None) -> None:
+    def __init__(self, config: OpenClawConfig | None = None, target_name: str = "openclaw") -> None:
         self.config = config or OpenClawConfig.from_env()
+        self.target_name = target_name
 
     def run(self, request: AgentRequest) -> AgentResponse:
         if not self.config.ssh_target:
             return AgentResponse(
                 status="error",
-                text="OpenClaw SSH 未配置：请设置 XOB_OPENCLAW_SSH_TARGET。",
-                summary="missing XOB_OPENCLAW_SSH_TARGET",
+                text=f"{self.target_name} 未配置：请设置 {self.config.env_prefix}_SSH_TARGET，或用 local 在本机执行。",
+                summary=f"missing {self.config.env_prefix}_SSH_TARGET",
                 artifacts=[],
             )
         if not self.config.enable_commands:
@@ -99,8 +104,8 @@ class OpenClawSshAdapter:
 
         return AgentResponse(
             status="done" if ok else "error",
-            text=f"OpenClaw gateway 状态：{status_text}。命令转发未开启。",
-            summary=f"openclaw health {status_text}",
+            text=f"{self.target_name} gateway 状态：{status_text}。命令转发未开启。",
+            summary=f"{self.target_name} health {status_text}",
             artifacts=[],
         )
 
@@ -129,11 +134,29 @@ class OpenClawSshAdapter:
         return AgentResponse(
             status=status,
             text=text,
-            summary=f"openclaw agent {status}",
-            artifacts=[{"type": "openclaw_agent", "session_key": session_key}],
+            summary=f"{self.target_name} agent {status}",
+            artifacts=[{"type": "openclaw_agent", "target": self.target_name, "session_key": session_key}],
         )
 
     def _run_openclaw(self, args: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+        if self.config.ssh_target == "local":
+            argv = [self.config.cli_bin, *args]
+            try:
+                return subprocess.run(
+                    argv,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                return subprocess.CompletedProcess(
+                    argv,
+                    124,
+                    stdout=_coerce_text(exc.stdout),
+                    stderr=_coerce_text(exc.stderr) + "\ncommand timed out",
+                )
+
         argv = [
             self.config.ssh_bin,
             "-o",
@@ -152,7 +175,7 @@ class OpenClawSshAdapter:
             )
         if self.config.ssh_key:
             argv.extend(["-i", self.config.ssh_key])
-        remote_command = " ".join(shlex.quote(part) for part in ["openclaw", *args])
+        remote_command = " ".join(shlex.quote(part) for part in [self.config.cli_bin, *args])
         argv.extend([self.config.ssh_target, remote_command])
         try:
             return subprocess.run(
@@ -172,11 +195,42 @@ class OpenClawSshAdapter:
 
 
 def adapter_for(target: str) -> Any:
-    if target == "fake":
+    route = _agent_routes().get(target)
+    if route is None:
+        raise ValueError(f"unsupported target: {target}")
+    kind, env_prefix = route
+    if kind == "fake":
         return FakeAdapter()
-    if target == "openclaw":
-        return OpenClawSshAdapter()
-    raise ValueError(f"unsupported target: {target}")
+    if kind in {"openclaw", "openclaw-cli"}:
+        return OpenClawSshAdapter(OpenClawConfig.from_env(env_prefix), target_name=target)
+    raise ValueError(f"unsupported adapter kind for {target}: {kind}")
+
+
+def _agent_routes() -> dict[str, tuple[str, str]]:
+    routes = {
+        "fake": ("fake", ""),
+        "openclaw": ("openclaw-cli", "XOB_OPENCLAW"),
+    }
+    raw = os.environ.get("XOB_AGENT_TARGETS", "")
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        name, separator, spec = item.partition("=")
+        name = name.strip()
+        if not name:
+            continue
+        if not separator:
+            spec = "openclaw-cli"
+        kind, _, env_prefix = spec.strip().partition(":")
+        kind = kind.strip() or "openclaw-cli"
+        env_prefix = env_prefix.strip() or f"XOB_{_env_token(name)}"
+        routes[name] = (kind, env_prefix)
+    return routes
+
+
+def _env_token(value: str) -> str:
+    return "".join(char.upper() if char.isalnum() else "_" for char in value).strip("_") or "AGENT"
 
 
 def _truthy(value: str | None) -> bool:
@@ -224,6 +278,8 @@ def _extract_status(data: Any) -> str | None:
     for key in ("status", "state"):
         value = data.get(key)
         if isinstance(value, str) and value:
+            if value == "ok":
+                return "done"
             return value
     return None
 
@@ -231,6 +287,12 @@ def _extract_status(data: Any) -> str | None:
 def _extract_text(data: Any) -> str | None:
     if isinstance(data, str):
         return data
+    if isinstance(data, list):
+        for item in data:
+            nested = _extract_text(item)
+            if nested:
+                return nested
+        return None
     if not isinstance(data, dict):
         return None
     for key in ("text", "reply", "response", "message", "content", "output", "answer"):
@@ -240,7 +302,7 @@ def _extract_text(data: Any) -> str | None:
         nested = _extract_text(value)
         if nested:
             return nested
-    for key in ("result", "data", "turn", "assistant"):
+    for key in ("result", "payloads", "data", "turn", "assistant"):
         nested = _extract_text(data.get(key))
         if nested:
             return nested

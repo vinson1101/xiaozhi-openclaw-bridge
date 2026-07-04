@@ -1,10 +1,13 @@
 # Phase 2 OpenClaw Adapter
 
-Phase 2 adds the first real backend adapter for OpenClaw.
+Phase 2 adds the first real backend adapter. OpenClaw is the first configured
+target, but the Bridge route uses a target table so another environment can
+route `hermas` or `lobster` without changing firmware.
 
 ## Scope
 
 - `target:"openclaw"` in `POST /command`
+- configurable target aliases such as `target:"hermas"`
 - SSH-based OpenClaw CLI invocation
 - safe default mode that only checks `openclaw health --json`
 - optional command mode using `openclaw agent --json --message ...`
@@ -16,11 +19,45 @@ No VPS host, SSH key, token, or personal runtime path is stored in Git.
 
 Set these in a local `.env` or shell profile. `.env` is ignored by Git.
 
+Built-in targets:
+
+```text
+fake = fake adapter
+openclaw = openclaw-cli adapter using XOB_OPENCLAW_*
+```
+
 ```bash
 export XOB_OPENCLAW_SSH_TARGET='<user>@<host>'
 export XOB_OPENCLAW_SSH_KEY='/absolute/path/to/private/key'
 export XOB_OPENCLAW_SSH_KNOWN_HOSTS='/absolute/path/to/known_hosts'
 ```
+
+If the Bridge runs on the same VPS as OpenClaw, skip SSH and run the local CLI:
+
+```bash
+export XOB_OPENCLAW_SSH_TARGET='local'
+```
+
+Add another routable target by mapping a target name to an adapter kind and an
+environment-variable prefix:
+
+```bash
+export XOB_AGENT_TARGETS='hermas=openclaw-cli:XOB_HERMAS'
+export XOB_HERMAS_SSH_TARGET='<user>@<hermas-host>'
+export XOB_HERMAS_SSH_KEY='/absolute/path/to/hermas/key'
+```
+
+For a same-host test:
+
+```bash
+export XOB_AGENT_TARGETS='hermas=openclaw-cli:XOB_HERMAS'
+export XOB_HERMAS_SSH_TARGET='local'
+```
+
+The board-side `xob.default_target` can then be set to `openclaw`, `hermas`, or
+any other target name present in `XOB_AGENT_TARGETS`. A Hermas-specific adapter
+should be added only after its real API is known; until then this route only
+covers OpenClaw-compatible CLI/SSH targets.
 
 By default, the adapter does not forward user commands. It only verifies that the OpenClaw gateway is reachable:
 

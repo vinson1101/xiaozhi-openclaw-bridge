@@ -40,6 +40,8 @@ The implemented paths are USB serial provisioning and temporary AP provisioning.
 Both accept `bridge_url`, `device_token`, `default_target`, `wifi_ssid`, and
 `wifi_password`, then write only the `xob` namespace and reboot. If
 `default_target` is missing or empty, firmware falls back to `fake`.
+`default_target` is only a route name; the Bridge maps names such as `openclaw`
+or `hermas` to the actual backend for the current LAN or VPS environment.
 
 During development, a WiFi connection failure also falls back to the same
 provisioning mode. This lets the operator correct SSID, password, Bridge URL, or

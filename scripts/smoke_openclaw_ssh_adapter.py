@@ -29,7 +29,7 @@ remote_command = sys.argv[-1]
 if " health " in f" {remote_command} ":
     print(json.dumps({"ok": True, "status": "live"}))
 elif " agent " in f" {remote_command} ":
-    print(json.dumps({"status": "done", "text": "龙虾收到：测试命令", "summary": "ok"}))
+    print(json.dumps({"status": "ok", "result": {"payloads": [{"text": "龙虾收到：测试命令"}]}}))
 else:
     print("unexpected command", remote_command, file=sys.stderr)
     sys.exit(2)
@@ -37,44 +37,77 @@ else:
             encoding="utf-8",
         )
         fake_ssh.chmod(0o700)
-        db = tmp_path / "bridge.sqlite3"
+        fake_openclaw = tmp_path / "openclaw"
+        fake_openclaw.write_text(
+            """#!/usr/bin/env python3
+import json
+import sys
+
+if "health" in sys.argv:
+    print(json.dumps({"ok": True, "status": "live"}))
+elif "agent" in sys.argv:
+    print(json.dumps({"status": "ok", "result": {"payloads": [{"text": "龙虾收到：测试命令"}]}}))
+else:
+    print("unexpected argv", sys.argv, file=sys.stderr)
+    sys.exit(2)
+""",
+            encoding="utf-8",
+        )
+        fake_openclaw.chmod(0o700)
 
         old_env = dict(os.environ)
-        os.environ.update(
-            {
-                "XOB_OPENCLAW_SSH_BIN": str(fake_ssh),
-                "XOB_OPENCLAW_SSH_TARGET": "fake-openclaw",
-                "XOB_OPENCLAW_ENABLE_COMMANDS": "1",
-            }
-        )
         try:
-            server = build_server("127.0.0.1", 0, db)
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                host, port = server.server_address
-                _wait_for_health(host, port)
-                response = _post_json(
-                    f"http://{host}:{port}/command",
-                    {"target": "openclaw", "text": "测试命令"},
-                )
-                assert response["status"] == "done"
-                assert response["text"] == "龙虾收到：测试命令"
-                session_id = response["session_id"]
-                with sqlite3.connect(db) as conn:
-                    events = conn.execute(
-                        "SELECT type FROM session_events WHERE session_id = ? ORDER BY seq",
-                        (session_id,),
-                    ).fetchall()
-                assert [row[0] for row in events] == ["command.received", "backend.response"]
-            finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(timeout=2)
+            os.environ.update(
+                {
+                    "XOB_OPENCLAW_SSH_BIN": str(fake_ssh),
+                    "XOB_OPENCLAW_SSH_TARGET": "fake-openclaw",
+                    "XOB_OPENCLAW_ENABLE_COMMANDS": "1",
+                }
+            )
+            _run_command_smoke(tmp_path / "bridge-ssh.sqlite3", "openclaw")
+
+            os.environ.clear()
+            os.environ.update(old_env)
+            os.environ.update(
+                {
+                    "PATH": f"{tmp_path}:{old_env.get('PATH', '')}",
+                    "XOB_AGENT_TARGETS": "hermas=openclaw-cli:XOB_HERMAS",
+                    "XOB_HERMAS_SSH_TARGET": "local",
+                    "XOB_HERMAS_ENABLE_COMMANDS": "1",
+                }
+            )
+            _run_command_smoke(tmp_path / "bridge-local.sqlite3", "hermas")
         finally:
             os.environ.clear()
             os.environ.update(old_env)
     print("smoke_openclaw_ssh_adapter ok")
+
+
+def _run_command_smoke(db: Path, target: str) -> None:
+    server = build_server("127.0.0.1", 0, db)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        _wait_for_health(host, port)
+        response = _post_json(
+            f"http://{host}:{port}/command",
+            {"target": target, "text": "测试命令"},
+        )
+        assert response["target"] == target
+        assert response["status"] == "done"
+        assert response["text"] == "龙虾收到：测试命令"
+        session_id = response["session_id"]
+        with sqlite3.connect(db) as conn:
+            events = conn.execute(
+                "SELECT type FROM session_events WHERE session_id = ? ORDER BY seq",
+                (session_id,),
+            ).fetchall()
+        assert [row[0] for row in events] == ["command.received", "backend.response"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def _wait_for_health(host: str, port: int) -> None:
