@@ -32,9 +32,9 @@ def main() -> None:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED if not path.exists()]
     assert not missing, f"missing firmware files: {', '.join(missing)}"
     main_c = (FW / "main" / "main.c").read_text()
-    for token in ["nvs_flash_init", "bridge_url", "device_token", "default_target", "wifi_ssid", "post_device_hello", "post_device_command", "post_device_audio_probe", "probe_xiaozhi_websocket", "audio_upload", "websocket", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "XOB_BUTTON_LISTEN_GPIO", "esp32c3"]:
+    for token in ["nvs_flash_init", "bridge_url", "device_token", "default_target", "wifi_ssid", "post_device_hello", "post_device_command", "post_device_audio_probe", "probe_xiaozhi_websocket", "run_vb6824_uart_probe", "audio_upload", "websocket", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "XOB_BUTTON_LISTEN_GPIO", "esp32c3"]:
         assert token in main_c or token in (FW / "sdkconfig.defaults").read_text(), f"missing {token}"
-    for token in ["driver/gpio.h", "driver/usb_serial_jtag.h", "GPIO_NUM_7", "GPIO_NUM_8", "GPIO_NUM_9", "button_task", "serial_command_task", ":config", ":setup", ":status", ":voice", ":audio", ":ws", ":talk"]:
+    for token in ["driver/gpio.h", "driver/uart.h", "driver/usb_serial_jtag.h", "GPIO_NUM_7", "GPIO_NUM_8", "GPIO_NUM_9", "button_task", "serial_command_task", ":config", ":setup", ":status", ":vb", ":vb-talk", ":voice", ":audio", ":ws", ":talk"]:
         assert token in main_c, f"missing {token}"
     assert "nvs_flash_erase" not in main_c, "firmware must not erase stock NVS automatically"
     eyes_c = (FW / "main" / "eyes.c").read_text()
@@ -49,6 +49,9 @@ def main() -> None:
     build_script = (ROOT / "scripts" / "build_firmware.sh").read_text()
     for token in ["idf.py set-target esp32c3", "idf.py build"]:
         assert token in build_script, f"missing {token}"
+    main_cmake = (FW / "main" / "CMakeLists.txt").read_text()
+    for token in ["esp_driver_uart"]:
+        assert token in main_cmake, f"missing {token}"
     assert "idf.py flash" not in build_script, "build script must not flash"
     partitions = _read_partitions(FW / "partitions.csv")
     assert partitions == PARTITIONS, "firmware partition table must match stock layout"

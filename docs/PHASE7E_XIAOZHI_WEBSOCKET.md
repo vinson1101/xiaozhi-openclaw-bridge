@@ -83,6 +83,10 @@ Firmware also exposes `:talk`, which sends `listen/start`, one small binary
 test frame, and `listen/stop`, then waits for `stt` and `tts` text frames. It is
 a protocol probe, not real microphone capture.
 
+Firmware also exposes `:vb-talk` after Phase 7F. It uses the same WebSocket
+control flow, but sends real VB6824 Opus microphone frames instead of the static
+test frame.
+
 Firmware also exposes `:status` as a safe diagnostic command. It reports only
 whether config values exist, the HTTP port, and a non-secret host hash. It does
 not print the raw Bridge URL, token, WiFi SSID, password, device id, or MAC.

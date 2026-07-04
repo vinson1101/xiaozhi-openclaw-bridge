@@ -56,6 +56,9 @@
 - Bridge accepts XiaoZhi-style WebSocket `listen` controls and binary audio frames, then returns `stt` / `tts` text frames.
 - Firmware serial `:ws` probe performs the XiaoZhi-compatible WebSocket hello handshake.
 - Firmware serial `:talk` probe sends a XiaoZhi-style listen/audio/stop cycle and waits for `stt` / `tts` text frames.
+- Firmware identifies the board microphone input as VB6824 UART on GPIO20/GPIO10 at 2 Mbps.
+- Firmware serial `:vb` validates real VB6824 audio and wake-word frames from the board.
+- Firmware serial `:vb-talk` sends real VB6824 Opus frames over `/device/ws` and receives `stt` / `tts` responses.
 - Firmware serial `:status` reports safe Bridge endpoint diagnostics without printing raw secrets.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
 - Deployment units disable the generic `/command` route for public device hosts.
@@ -171,6 +174,7 @@ Tasks:
 - [x] Record photo-visible MCU, flash, amplifier, and battery markings.
 - [ ] Identify exact microphone, speaker/audio codec, and remaining battery/power GPIO/pin map.
 - [x] Infer LCD SPI, reset, and backlight pins from the stock binary.
+- [x] Identify microphone input path as VB6824 UART.
 - [x] Decide whether current ESP32-C3 board is enough for Phase 6 display/control.
 
 Acceptance:
@@ -228,7 +232,8 @@ Goal: complete the first real voice command loop.
 Tasks:
 
 - [ ] Add press-to-record.
-- [ ] Upload PCM16 audio frames. Current probe uploads one silent frame over HTTP.
+- [x] Upload real microphone frames through the WebSocket probe.
+- [ ] Convert the serial microphone probe into press-to-record.
 - [x] Add XiaoZhi-compatible WebSocket hello handshake.
 - [x] Add firmware serial probe for the WebSocket hello handshake.
 - [x] Add ASR provider adapter.

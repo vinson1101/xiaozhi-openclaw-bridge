@@ -44,6 +44,7 @@ Project documents:
 - [docs/PHASE7C_TTS_PROVIDER.md](docs/PHASE7C_TTS_PROVIDER.md): TTS provider adapter
 - [docs/PHASE7D_VOICE_ROUTE.md](docs/PHASE7D_VOICE_ROUTE.md): voice text routing
 - [docs/PHASE7E_XIAOZHI_WEBSOCKET.md](docs/PHASE7E_XIAOZHI_WEBSOCKET.md): XiaoZhi WebSocket handshake
+- [docs/PHASE7F_VB6824_MIC.md](docs/PHASE7F_VB6824_MIC.md): VB6824 microphone path
 - [docs/PHASE9A_SYSTEMD_SERVICE.md](docs/PHASE9A_SYSTEMD_SERVICE.md): systemd Bridge service template
 - [docs/PHASE9B_SQLITE_BACKUP.md](docs/PHASE9B_SQLITE_BACKUP.md): SQLite backup and restore helper
 - [docs/PHASE9C_REVERSE_PROXY.md](docs/PHASE9C_REVERSE_PROXY.md): nginx reverse proxy sample
