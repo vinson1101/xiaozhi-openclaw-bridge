@@ -46,6 +46,7 @@ static int local_volume = 50;
 #define XOB_BUTTON_LISTEN BIT1
 #define XOB_BUTTON_VOLUME_UP BIT2
 #define XOB_BUTTON_ALL (XOB_BUTTON_VOLUME_DOWN | XOB_BUTTON_LISTEN | XOB_BUTTON_VOLUME_UP)
+#define XOB_BUTTON_CONFIG_CHORD (XOB_BUTTON_VOLUME_DOWN | XOB_BUTTON_VOLUME_UP)
 
 typedef struct {
     xob_eyes_frame_t eyes;
@@ -518,7 +519,7 @@ static uint8_t button_mask(void) {
 }
 
 static void enter_button_provisioning(void) {
-    ESP_LOGW(TAG, "all buttons held; entering provisioning");
+    ESP_LOGW(TAG, "button provisioning requested");
     set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_PENDING);
     xob_start_ap_provisioning();
     xob_run_serial_provisioning();
@@ -527,7 +528,7 @@ static void enter_button_provisioning(void) {
 static void button_task(void *arg) {
     (void)arg;
     uint8_t last = button_mask();
-    int64_t all_pressed_since = 0;
+    int64_t config_chord_since = 0;
 
     while (true) {
         uint8_t mask = button_mask();
@@ -537,14 +538,14 @@ static void button_task(void *arg) {
         if (mask != last) {
             ESP_LOGI(TAG, "button mask=0x%02x", mask);
         }
-        if ((mask & XOB_BUTTON_ALL) == XOB_BUTTON_ALL) {
-            if (all_pressed_since == 0) {
-                all_pressed_since = now;
-            } else if (now - all_pressed_since >= 2000000) {
+        if ((mask & XOB_BUTTON_CONFIG_CHORD) == XOB_BUTTON_CONFIG_CHORD && (mask & XOB_BUTTON_LISTEN) == 0) {
+            if (config_chord_since == 0) {
+                config_chord_since = now;
+            } else if (now - config_chord_since >= 2000000) {
                 enter_button_provisioning();
             }
         } else {
-            all_pressed_since = 0;
+            config_chord_since = 0;
             if ((pressed & XOB_BUTTON_VOLUME_DOWN) != 0 && local_volume > 0) {
                 local_volume -= 5;
                 ESP_LOGI(TAG, "volume=%d", local_volume);

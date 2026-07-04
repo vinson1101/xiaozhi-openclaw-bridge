@@ -19,9 +19,12 @@ constants need to be swapped.
 ## Behavior
 
 - All three buttons pressed at app startup enter provisioning.
-- All three buttons held for two seconds while running enter provisioning.
+- Volume down and volume up held together for two seconds while running enter
+  provisioning.
 - The middle button interrupts the current visual conversation state and latches
   the avatar into `listening`.
+- Middle long-press is treated as hardware power behavior and is not assigned a
+  firmware long-press action.
 - Button mask changes are logged as safe GPIO bitmasks for physical mapping
   checks.
 - Volume buttons adjust an in-memory volume value in 5-point steps.
