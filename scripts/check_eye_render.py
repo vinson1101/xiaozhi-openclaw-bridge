@@ -32,28 +32,53 @@ static void assert_rects_inside_screen(xob_screen_frame_t frame) {{
     }}
 }}
 
+static void assert_face_centered(xob_screen_frame_t frame) {{
+    int x0 = XOB_SCREEN_WIDTH;
+    int x1 = 0;
+    for (uint8_t i = 1; i < frame.count; i++) {{
+        xob_screen_rect_t rect = frame.rects[i];
+        if (rect.color == XOB_RGB565_BLACK) {{
+            continue;
+        }}
+        if (rect.x < x0) {{
+            x0 = rect.x;
+        }}
+        if (rect.x + rect.w > x1) {{
+            x1 = rect.x + rect.w;
+        }}
+    }}
+    int center = (x0 + x1) / 2;
+    assert(center >= XOB_SCREEN_WIDTH / 2 - 2);
+    assert(center <= XOB_SCREEN_WIDTH / 2 + 2);
+}}
+
 int main(void) {{
     xob_screen_frame_t empty = xob_screen_render_eyes(0);
     assert(empty.count == 0);
 
     xob_eyes_frame_t idle = xob_eyes_frame(XOB_EYES_IDLE, 0);
     xob_screen_frame_t open = xob_screen_render_eyes(&idle);
-    assert(open.count == 5);
+    assert(open.count > 80);
+    assert(open.count <= XOB_SCREEN_MAX_RECTS);
     assert(open.rects[0].x == 0);
     assert(open.rects[0].y == 0);
     assert(open.rects[0].w == XOB_SCREEN_WIDTH);
     assert(open.rects[0].h == XOB_SCREEN_HEIGHT);
     assert_rects_inside_screen(open);
+    assert_face_centered(open);
 
-    xob_eyes_frame_t blink = xob_eyes_frame(XOB_EYES_IDLE, 80);
+    xob_eyes_frame_t blink = xob_eyes_frame(XOB_EYES_IDLE, 5320);
     xob_screen_frame_t closed = xob_screen_render_eyes(&blink);
-    assert(closed.count == 3);
+    assert(closed.count == 4);
     assert_rects_inside_screen(closed);
+    assert_face_centered(closed);
 
     xob_eyes_frame_t thinking = xob_eyes_frame(XOB_EYES_THINKING, 500);
     xob_screen_frame_t shifted = xob_screen_render_eyes(&thinking);
-    assert(shifted.count == 5);
+    assert(shifted.count > 80);
+    assert(shifted.count <= XOB_SCREEN_MAX_RECTS);
     assert_rects_inside_screen(shifted);
+    assert_face_centered(shifted);
 
     return 0;
 }}

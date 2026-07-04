@@ -6,7 +6,7 @@
 
 #define XOB_SCREEN_WIDTH 240
 #define XOB_SCREEN_HEIGHT 240
-#define XOB_SCREEN_MAX_RECTS 5
+#define XOB_SCREEN_MAX_RECTS 160
 
 typedef struct {
     int16_t x;

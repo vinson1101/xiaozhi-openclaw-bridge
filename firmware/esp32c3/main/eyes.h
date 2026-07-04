@@ -19,6 +19,7 @@ typedef struct {
     int16_t pupil_dx;
     int16_t pupil_dy;
     uint8_t openness;
+    uint8_t mouth_open;
 } xob_eyes_frame_t;
 
 xob_eyes_frame_t xob_eyes_frame(xob_eye_state_t state, uint32_t tick_ms);

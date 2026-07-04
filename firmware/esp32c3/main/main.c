@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "esp_check.h"
@@ -8,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -23,6 +25,8 @@ static const char *TAG = "xob";
 static EventGroupHandle_t wifi_events;
 static const int WIFI_CONNECTED_BIT = BIT0;
 static const int WIFI_FAIL_BIT = BIT1;
+static xob_eyes_frame_t last_avatar_eyes;
+static bool has_last_avatar_eyes;
 
 typedef struct {
     char bridge_url[128];
@@ -173,7 +177,42 @@ static esp_err_t post_device_hello(const app_config_t *config) {
     return (status >= 200 && status < 300) ? ESP_OK : ESP_FAIL;
 }
 
-static void draw_boot_screen(void) {
+static bool avatar_eyes_equal(const xob_eyes_frame_t *left, const xob_eyes_frame_t *right) {
+    return left->left_x == right->left_x &&
+           left->right_x == right->right_x &&
+           left->y == right->y &&
+           left->width == right->width &&
+           left->height == right->height &&
+           left->pupil_dx == right->pupil_dx &&
+           left->pupil_dy == right->pupil_dy &&
+           left->openness == right->openness &&
+           left->mouth_open == right->mouth_open;
+}
+
+static esp_err_t draw_avatar_frame(const xob_eyes_frame_t *eyes) {
+    xob_screen_frame_t screen = xob_screen_render_eyes(eyes);
+    return xob_lcd_draw_frame(&screen);
+}
+
+static void avatar_task(void *arg) {
+    (void)arg;
+    while (true) {
+        uint32_t tick_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        xob_eyes_frame_t eyes = xob_eyes_frame(XOB_EYES_IDLE, tick_ms);
+        if (!has_last_avatar_eyes || !avatar_eyes_equal(&last_avatar_eyes, &eyes)) {
+            esp_err_t err = draw_avatar_frame(&eyes);
+            if (err == ESP_OK) {
+                last_avatar_eyes = eyes;
+                has_last_avatar_eyes = true;
+            } else {
+                ESP_LOGW(TAG, "avatar draw failed: %s", esp_err_to_name(err));
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(80));
+    }
+}
+
+static void start_avatar_screen(void) {
     xob_eyes_frame_t eyes = xob_eyes_frame(XOB_EYES_IDLE, 0);
     xob_screen_frame_t screen = xob_screen_render_eyes(&eyes);
     ESP_LOGI(TAG, "eyes ready: %dx%d openness=%u", eyes.width, eyes.height, eyes.openness);
@@ -182,6 +221,12 @@ static void draw_boot_screen(void) {
     esp_err_t err = xob_lcd_init();
     if (err == ESP_OK) {
         ESP_ERROR_CHECK(xob_lcd_draw_frame(&screen));
+        last_avatar_eyes = eyes;
+        has_last_avatar_eyes = true;
+        BaseType_t created = xTaskCreate(avatar_task, "xob_avatar", 4096, NULL, 2, NULL);
+        if (created != pdPASS) {
+            ESP_LOGW(TAG, "avatar task not started");
+        }
     } else {
         ESP_LOGW(TAG, "LCD init skipped: %s", esp_err_to_name(err));
     }
@@ -195,7 +240,7 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(err);
 
-    draw_boot_screen();
+    start_avatar_screen();
 
     app_config_t config = {0};
     if (load_config(&config) != ESP_OK) {

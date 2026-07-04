@@ -24,6 +24,11 @@ static const char *TAG = "xob_lcd";
 #define XOB_LCD_PIN_BL 5
 #define XOB_LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
 #define XOB_LCD_BACKLIGHT_PWM_HZ 25000
+#define XOB_LCD_SWAP_XY true
+#define XOB_LCD_MIRROR_X false
+#define XOB_LCD_MIRROR_Y true
+#define XOB_LCD_GAP_X 80
+#define XOB_LCD_GAP_Y 0
 
 static esp_lcd_panel_handle_t panel;
 static bool panel_ready;
@@ -98,12 +103,16 @@ esp_err_t xob_lcd_init(void) {
     vTaskDelay(pdMS_TO_TICKS(100));
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(panel), TAG, "panel init");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_invert_color(panel, true), TAG, "panel invert");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_swap_xy(panel, XOB_LCD_SWAP_XY), TAG, "panel swap xy");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_mirror(panel, XOB_LCD_MIRROR_X, XOB_LCD_MIRROR_Y), TAG, "panel mirror");
+    ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(panel, XOB_LCD_GAP_X, XOB_LCD_GAP_Y), TAG, "panel gap");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(panel, true), TAG, "panel on");
     ESP_RETURN_ON_ERROR(init_backlight(), TAG, "backlight");
 
     panel_ready = true;
-    ESP_LOGI(TAG, "ST7789 ready: mosi=%d sclk=%d cs=%d dc=%d rst=%d bl=%d",
-             XOB_LCD_PIN_MOSI, XOB_LCD_PIN_SCLK, XOB_LCD_PIN_CS, XOB_LCD_PIN_DC, XOB_LCD_PIN_RST, XOB_LCD_PIN_BL);
+    ESP_LOGI(TAG, "ST7789 ready: mosi=%d sclk=%d cs=%d dc=%d rst=%d bl=%d swap_xy=%d mirror_x=%d mirror_y=%d gap=%d,%d",
+             XOB_LCD_PIN_MOSI, XOB_LCD_PIN_SCLK, XOB_LCD_PIN_CS, XOB_LCD_PIN_DC, XOB_LCD_PIN_RST, XOB_LCD_PIN_BL,
+             XOB_LCD_SWAP_XY, XOB_LCD_MIRROR_X, XOB_LCD_MIRROR_Y, XOB_LCD_GAP_X, XOB_LCD_GAP_Y);
     return ESP_OK;
 }
 
