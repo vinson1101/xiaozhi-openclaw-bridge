@@ -176,8 +176,9 @@ Tasks:
 - [x] Implement HTTP JSON `hello`.
 - [x] Display Bridge connection state.
 - [x] Add safe WiFi scan diagnostics and USB serial fallback after WiFi failure.
+- [x] Provision WiFi config on the flashed board and validate WiFi association.
 - [ ] Implement temporary AP plus local HTTP config page for normal WiFi/Bridge setup.
-- [ ] Provision WiFi/Bridge config on the flashed board and validate one real `/device/hello` against a local Bridge.
+- [ ] Validate one real `/device/hello` against a reachable Bridge.
 
 Acceptance:
 

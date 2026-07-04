@@ -111,12 +111,25 @@ static void wifi_event_handler(void *arg, esp_event_base_t base, int32_t event_i
 }
 
 static bool ssid_matches(const wifi_ap_record_t *ap, const char *target_ssid) {
-    return strncmp((const char *)ap->ssid, target_ssid, sizeof(ap->ssid)) == 0;
+    size_t target_len = strlen(target_ssid);
+    size_t ap_len = strnlen((const char *)ap->ssid, sizeof(ap->ssid));
+    return target_len == ap_len && memcmp(ap->ssid, target_ssid, target_len) == 0;
+}
+
+static uint32_t ssid_hash(const uint8_t *ssid, size_t len) {
+    uint32_t hash = 2166136261u;
+    for (size_t i = 0; i < len; i++) {
+        hash ^= ssid[i];
+        hash *= 16777619u;
+    }
+    return hash;
 }
 
 static void log_target_scan_result(const char *target_ssid) {
     wifi_scan_config_t scan_config = {
         .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active.max = 500,
     };
     esp_err_t err = esp_wifi_scan_start(&scan_config, true);
     if (err != ESP_OK) {
@@ -131,8 +144,11 @@ static void log_target_scan_result(const char *target_ssid) {
         esp_wifi_clear_ap_list();
         return;
     }
+    size_t target_len = strlen(target_ssid);
+    uint32_t target_hash = ssid_hash((const uint8_t *)target_ssid, target_len);
     if (ap_count == 0) {
-        ESP_LOGI(TAG, "WiFi scan: aps=0 target_matches=0");
+        ESP_LOGI(TAG, "WiFi scan: aps=0 target_len=%u target_hash=%08lx target_matches=0",
+                 (unsigned)target_len, (unsigned long)target_hash);
         return;
     }
 
@@ -168,10 +184,12 @@ static void log_target_scan_result(const char *target_ssid) {
         }
     }
     if (matches > 0) {
-        ESP_LOGI(TAG, "WiFi scan: aps=%u target_matches=%u best_channel=%u best_rssi=%d auth=%d",
-                 ap_count, matches, best_channel, best_rssi, best_authmode);
+        ESP_LOGI(TAG, "WiFi scan: aps=%u target_len=%u target_hash=%08lx target_matches=%u best_channel=%u best_rssi=%d auth=%d",
+                 ap_count, (unsigned)target_len, (unsigned long)target_hash, matches,
+                 best_channel, best_rssi, best_authmode);
     } else {
-        ESP_LOGI(TAG, "WiFi scan: aps=%u target_matches=0", ap_count);
+        ESP_LOGI(TAG, "WiFi scan: aps=%u target_len=%u target_hash=%08lx target_matches=0",
+                 ap_count, (unsigned)target_len, (unsigned long)target_hash);
     }
 
     free(records);
@@ -204,7 +222,11 @@ static esp_err_t connect_wifi(const app_config_t *config) {
     wifi_config_t wifi_config = {0};
     strncpy((char *)wifi_config.sta.ssid, config->wifi_ssid, sizeof(wifi_config.sta.ssid) - 1);
     strncpy((char *)wifi_config.sta.password, config->wifi_password, sizeof(wifi_config.sta.password) - 1);
+    wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    wifi_config.sta.threshold.rssi = -127;
     wifi_config.sta.threshold.authmode = strlen(config->wifi_password) > 0 ? WIFI_AUTH_WPA_PSK : WIFI_AUTH_OPEN;
+    wifi_config.sta.failure_retry_cnt = 3;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "wifi mode");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wifi_config), TAG, "wifi config");
