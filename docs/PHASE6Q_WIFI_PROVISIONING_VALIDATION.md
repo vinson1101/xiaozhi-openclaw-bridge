@@ -29,6 +29,24 @@ join the home WiFi after the SSID is corrected. The HTTP error occurs after IP
 acquisition. Board-side ping diagnostics show that the board can reach the
 router and internet, but cannot reach the configured Bridge host on the Mac.
 
+## 2026-07-04 Retest
+
+The local Bridge was started on `0.0.0.0:8788`, and `/healthz` was reachable
+from the Mac loopback path. A board reset still produced:
+
+```text
+WiFi connected
+ping gateway: sent=3 received=3
+ping internet: sent=3 received=3
+ping bridge_host: sent=3 received=0
+device hello failed: ESP_ERR_HTTP_CONNECT
+```
+
+This rules out a localhost-only Bridge bind as the remaining cause. The next
+check is still network reachability to the configured Bridge host: verify the
+Bridge URL points at the current reachable host, test from another WiFi client,
+or move the Bridge to a host/VPS the board can reach.
+
 ## Network Check
 
 Mac-side read-only diagnostics showed:
