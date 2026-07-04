@@ -267,14 +267,16 @@ void xob_start_ap_provisioning(void) {
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     init.nvs_enable = false;
     err = esp_wifi_init(&init);
-    if (err != ESP_OK) {
+    if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
         ESP_LOGW(TAG, "AP provisioning WiFi init failed: %s", esp_err_to_name(err));
         return;
     }
-    err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "AP provisioning WiFi storage failed: %s", esp_err_to_name(err));
-        return;
+    if (err == ESP_OK) {
+        err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "AP provisioning WiFi storage failed: %s", esp_err_to_name(err));
+            return;
+        }
     }
 
     char ssid[16];

@@ -81,6 +81,7 @@ static void set_avatar_state(
     xob_screen_status_t wifi_status,
     xob_screen_status_t bridge_status
 );
+static void enter_button_provisioning(void);
 
 static esp_err_t read_string(nvs_handle_t nvs, const char *key, char *out, size_t out_len) {
     size_t required = out_len;
@@ -574,6 +575,10 @@ static void serial_command_task(void *arg) {
                 continue;
             }
             line[len] = '\0';
+            if (strcmp(line, ":config") == 0 || strcmp(line, ":setup") == 0) {
+                enter_button_provisioning();
+                continue;
+            }
             set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
             err = post_device_command(config, line);
             set_avatar_state(
@@ -668,7 +673,7 @@ static uint8_t button_mask(void) {
 }
 
 static void enter_button_provisioning(void) {
-    ESP_LOGW(TAG, "button provisioning requested");
+    ESP_LOGW(TAG, "provisioning requested");
     set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_PENDING);
     xob_start_ap_provisioning();
     xob_run_serial_provisioning();

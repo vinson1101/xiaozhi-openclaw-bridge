@@ -39,6 +39,12 @@ The board does not load OpenClaw, Hermas, Zebra, or any other Agent runtime.
 It only stores a small `default_target` routing preference and sends that to the
 Bridge. The Bridge still owns backend selection and Agent execution.
 
+## Serial Escape
+
+Typing `:config` or `:setup` in serial text command mode enters AP plus serial
+provisioning. This keeps configuration reachable while physical button mapping
+is still being verified.
+
 ## Known Blocker
 
 On the current home WiFi, the board still cannot reach the Mac Bridge host, so

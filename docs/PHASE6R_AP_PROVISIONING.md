@@ -28,6 +28,10 @@ On save, the firmware writes only the existing `xob` NVS namespace and reboots.
 The AP server runs alongside the existing USB serial provisioning loop, so the
 serial path remains the fallback.
 
+After WiFi is connected and USB serial text command mode is active, typing
+`:config` or `:setup` enters this same provisioning flow without relying on the
+physical buttons.
+
 ## Boundaries
 
 - No captive portal or DNS redirect.
@@ -46,3 +50,17 @@ idf.py build
 ```
 
 Real browser submission on the board remains pending until the next flash.
+
+## Board Check
+
+After the firmware was flashed, typing `:config` in USB serial text command mode
+started AP provisioning and entered the serial provisioning prompt:
+
+```text
+AP provisioning started: ssid=XOB-<suffix> password=xob-<lowercase suffix> url=http://192.168.4.1/
+XOB provisioning over USB serial
+bridge_url:
+```
+
+Browser form submission remains pending, but the runtime AP entry path no longer
+depends on the physical buttons.

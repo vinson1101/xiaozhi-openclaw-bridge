@@ -19,6 +19,7 @@
 - Firmware three-button controls exist in `docs/PHASE6S_BUTTON_CONTROLS.md`.
 - Firmware serial text command exists in `docs/PHASE6T_SERIAL_TEXT_COMMAND.md`.
 - Firmware command routing uses `xob.default_target`, falling back to `fake`.
+- Firmware serial text command mode can enter provisioning with `:config` or `:setup`.
 - No-flash ESP-IDF build path exists in `docs/PHASE6E_BUILD_VALIDATION.md`.
 - First-flash and restore review exists in `docs/PHASE6G_FIRST_FLASH_REVIEW.md`.
 - Sanitized boot log and pin recon exists in `docs/PHASE6H_BOOT_PIN_RECON.md`.
@@ -186,6 +187,7 @@ Tasks:
 - [x] Add three-button provisioning entry plus interrupt/listen and volume placeholders.
 - [x] Add USB serial text command to `POST /device/command`.
 - [x] Send configured `default_target` with board-side text commands.
+- [x] Add serial escape from text command mode into AP/serial provisioning.
 - [ ] Validate one real `/device/hello` against a reachable Bridge.
 
 Acceptance:

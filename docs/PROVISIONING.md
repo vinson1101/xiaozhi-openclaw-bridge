@@ -50,6 +50,10 @@ hold volume down and volume up together for two seconds while the firmware is
 running. The middle button may have hardware power behavior on long-press, so
 runtime provisioning avoids holding it.
 
+When the firmware is already in USB serial text command mode, typing `:config`
+or `:setup` also enters the same AP plus serial provisioning flow. This is the
+fallback when physical button mapping is still under test.
+
 The firmware keeps WiFi driver storage in RAM, then sets WiFi country to CN so 2.4 GHz channels 1-13 are scan/connect candidates. Diagnostic logs may report aggregate scan counts and target match counts, but must not print SSID values, WiFi passwords, device tokens, raw MAC addresses, or Bridge secrets.
 
 The firmware must not call `nvs_flash_erase()` automatically. If NVS recovery is needed, stop and require an explicit restore or erase decision.
