@@ -38,6 +38,7 @@
 - Provisioning plan exists in `docs/PROVISIONING.md`.
 - Custom firmware has been flashed once with the reviewed non-erase path; the stock full-flash backup remains local and ignored by Git.
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
+- Systemd Bridge service template exists in `deploy/systemd/xob-bridge.service`.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -251,7 +252,7 @@ Tasks:
 - [ ] Add pairing flow.
 - [ ] Add token rotation.
 - [ ] Add reverse proxy sample.
-- [ ] Add service unit or container deployment.
+- [x] Add service unit or container deployment.
 - [ ] Add health checks.
 - [ ] Add backup/restore for SQLite.
 - [ ] Add logging without secret leakage.

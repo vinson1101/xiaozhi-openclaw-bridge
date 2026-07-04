@@ -1,0 +1,20 @@
+[Unit]
+Description=Xiaoyuan OpenClaw Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xob
+Group=xob
+WorkingDirectory=/opt/xiaozhi-openclaw-bridge
+Environment=PYTHONPATH=/opt/xiaozhi-openclaw-bridge/src
+StateDirectory=xob-bridge
+ExecStart=/usr/bin/python3 -m xiaozhi_openclaw_bridge.server --host 0.0.0.0 --port 8788 --db /var/lib/xob-bridge/bridge.sqlite3
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
