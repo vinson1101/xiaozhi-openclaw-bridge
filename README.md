@@ -40,6 +40,7 @@ Project documents:
 - [docs/PHASE6S_BUTTON_CONTROLS.md](docs/PHASE6S_BUTTON_CONTROLS.md): three-button controls
 - [docs/PHASE6T_SERIAL_TEXT_COMMAND.md](docs/PHASE6T_SERIAL_TEXT_COMMAND.md): board-side serial text command
 - [docs/PHASE7_VOICE_PROMPTS.md](docs/PHASE7_VOICE_PROMPTS.md): Xiaoyuan fixed voice prompts
+- [docs/PHASE7B_ASR_PROVIDER.md](docs/PHASE7B_ASR_PROVIDER.md): ASR provider adapter
 - [docs/PHASE9A_SYSTEMD_SERVICE.md](docs/PHASE9A_SYSTEMD_SERVICE.md): systemd Bridge service template
 - [docs/PHASE9B_SQLITE_BACKUP.md](docs/PHASE9B_SQLITE_BACKUP.md): SQLite backup and restore helper
 - [docs/PHASE9C_REVERSE_PROXY.md](docs/PHASE9C_REVERSE_PROXY.md): nginx reverse proxy sample
