@@ -29,6 +29,10 @@ This phase does not add WebSocket streaming, board-side recording, playback, or
 real ASR. The current endpoint is enough for the next firmware step: upload one
 short PCM16 recording.
 
+Firmware also exposes a serial `:voice` / `:audio` probe that uploads 320 bytes
+of silent PCM16 to `/device/audio`. That validates device-to-Bridge audio
+transport; it is not microphone recording yet.
+
 ## Validation
 
 ```bash

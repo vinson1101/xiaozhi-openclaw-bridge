@@ -434,7 +434,7 @@ static esp_err_t post_device_hello(const app_config_t *config) {
     snprintf(
         body,
         sizeof(body),
-        "{\"device_id\":\"%s\",\"firmware\":\"xob-esp32c3\",\"capabilities\":[\"display\",\"text\"]}",
+        "{\"device_id\":\"%s\",\"firmware\":\"xob-esp32c3\",\"capabilities\":[\"display\",\"text\",\"audio_upload\"]}",
         device_id
     );
 
@@ -543,6 +543,51 @@ static esp_err_t post_device_command(const app_config_t *config, const char *tex
     return (status >= 200 && status < 300) ? ESP_OK : ESP_FAIL;
 }
 
+static esp_err_t post_device_audio_probe(const app_config_t *config) {
+    static const uint8_t audio[320] = {0};
+    const char *target = strlen(config->default_target) > 0 ? config->default_target : "fake";
+
+    char device_id[24];
+    make_device_id(device_id, sizeof(device_id));
+
+    char url[240];
+    snprintf(
+        url,
+        sizeof(url),
+        "%s/device/audio?device_id=%s&target=%s&sample_rate=16000&channels=1",
+        config->bridge_url,
+        device_id,
+        target
+    );
+
+    esp_http_client_config_t http_config = {
+        .url = url,
+        .method = HTTP_METHOD_POST,
+        .timeout_ms = 10000,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&http_config);
+    if (client == NULL) {
+        return ESP_FAIL;
+    }
+    esp_http_client_set_header(client, "Content-Type", "audio/pcm");
+    if (strlen(config->device_token) > 0) {
+        char auth[96];
+        snprintf(auth, sizeof(auth), "Bearer %s", config->device_token);
+        esp_http_client_set_header(client, "Authorization", auth);
+    }
+    esp_http_client_set_post_field(client, (const char *)audio, sizeof(audio));
+
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "device audio probe failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(TAG, "device audio probe status=%d", status);
+    return (status >= 200 && status < 300) ? ESP_OK : ESP_FAIL;
+}
+
 static esp_err_t ensure_usb_command_serial(void) {
     usb_serial_jtag_driver_config_t config = {
         .tx_buffer_size = 256,
@@ -577,6 +622,21 @@ static void serial_command_task(void *arg) {
             line[len] = '\0';
             if (strcmp(line, ":config") == 0 || strcmp(line, ":setup") == 0) {
                 enter_button_provisioning();
+                continue;
+            }
+            if (strcmp(line, ":voice") == 0 || strcmp(line, ":audio") == 0) {
+                set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+                err = post_device_audio_probe(config);
+                set_avatar_state(
+                    err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
+                    avatar_wifi_status,
+                    err == ESP_OK ? XOB_SCREEN_STATUS_OK : XOB_SCREEN_STATUS_ERROR
+                );
+                if (err == ESP_OK) {
+                    vTaskDelay(pdMS_TO_TICKS(1200));
+                    set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+                }
+                len = 0;
                 continue;
             }
             set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
