@@ -137,12 +137,16 @@ static bool read_line(const char *label, char *out, size_t out_len) {
     }
 }
 
-static esp_err_t write_config(const char *bridge_url, const char *device_token, const char *wifi_ssid, const char *wifi_password) {
+static esp_err_t write_config(const char *bridge_url, const char *device_token, const char *default_target, const char *wifi_ssid, const char *wifi_password) {
     nvs_handle_t nvs;
+    const char *target = strlen(default_target) > 0 ? default_target : "fake";
     ESP_RETURN_ON_ERROR(nvs_open("xob", NVS_READWRITE, &nvs), TAG, "open xob NVS");
     esp_err_t err = nvs_set_str(nvs, "bridge_url", bridge_url);
     if (err == ESP_OK) {
         err = nvs_set_str(nvs, "device_token", device_token);
+    }
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs, "default_target", target);
     }
     if (err == ESP_OK) {
         err = nvs_set_str(nvs, "wifi_ssid", wifi_ssid);
@@ -165,6 +169,7 @@ static esp_err_t send_setup_page(httpd_req_t *req) {
         "<form method=\"post\" action=\"/save\">"
         "<p><label>Bridge URL<br><input name=\"bridge_url\" required maxlength=\"128\" placeholder=\"http://192.168.4.2:8788\"></label></p>"
         "<p><label>Device token<br><input name=\"device_token\" maxlength=\"64\"></label></p>"
+        "<p><label>Default target<br><select name=\"default_target\"><option value=\"fake\">fake</option><option value=\"openclaw\">openclaw</option></select></label></p>"
         "<p><label>WiFi SSID<br><input name=\"wifi_ssid\" required maxlength=\"32\"></label></p>"
         "<p><label>WiFi password<br><input name=\"wifi_password\" type=\"password\" maxlength=\"64\"></label></p>"
         "<p><button type=\"submit\">Save and reboot</button></p>"
@@ -197,11 +202,15 @@ static esp_err_t save_setup(httpd_req_t *req) {
 
     char bridge_url[129];
     char device_token[65];
+    char default_target[16];
     char wifi_ssid[34];
     char wifi_password[66];
     esp_err_t err = form_value(body, "bridge_url", bridge_url, sizeof(bridge_url));
     if (err == ESP_OK) {
         err = optional_form_value(body, "device_token", device_token, sizeof(device_token));
+    }
+    if (err == ESP_OK) {
+        err = optional_form_value(body, "default_target", default_target, sizeof(default_target));
     }
     if (err == ESP_OK) {
         err = form_value(body, "wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
@@ -213,7 +222,7 @@ static esp_err_t save_setup(httpd_req_t *req) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid form");
     }
 
-    err = write_config(bridge_url, device_token, wifi_ssid, wifi_password);
+    err = write_config(bridge_url, device_token, default_target, wifi_ssid, wifi_password);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "failed to write xob config: %s", esp_err_to_name(err));
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "save failed");
@@ -332,6 +341,7 @@ void xob_start_ap_provisioning(void) {
 void xob_run_serial_provisioning(void) {
     char bridge_url[129];
     char device_token[65];
+    char default_target[16];
     char wifi_ssid[34];
     char wifi_password[66];
 
@@ -342,6 +352,7 @@ void xob_run_serial_provisioning(void) {
 
         if (!read_line("bridge_url", bridge_url, sizeof(bridge_url)) ||
             !read_line("device_token", device_token, sizeof(device_token)) ||
+            !read_line("default_target (empty=fake)", default_target, sizeof(default_target)) ||
             !read_line("wifi_ssid", wifi_ssid, sizeof(wifi_ssid)) ||
             !read_line("wifi_password", wifi_password, sizeof(wifi_password))) {
             ESP_LOGW(TAG, "serial input ended; retrying");
@@ -354,7 +365,7 @@ void xob_run_serial_provisioning(void) {
             continue;
         }
 
-        esp_err_t err = write_config(bridge_url, device_token, wifi_ssid, wifi_password);
+        esp_err_t err = write_config(bridge_url, device_token, default_target, wifi_ssid, wifi_password);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "failed to write xob config: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(1000));

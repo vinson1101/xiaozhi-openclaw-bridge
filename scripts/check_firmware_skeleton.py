@@ -32,7 +32,7 @@ def main() -> None:
     missing = [str(path.relative_to(ROOT)) for path in REQUIRED if not path.exists()]
     assert not missing, f"missing firmware files: {', '.join(missing)}"
     main_c = (FW / "main" / "main.c").read_text()
-    for token in ["nvs_flash_init", "bridge_url", "device_token", "wifi_ssid", "post_device_hello", "post_device_command", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "XOB_BUTTON_LISTEN_GPIO", "esp32c3"]:
+    for token in ["nvs_flash_init", "bridge_url", "device_token", "default_target", "wifi_ssid", "post_device_hello", "post_device_command", "xob_eyes_frame", "xob_screen_render_avatar", "xob_start_ap_provisioning", "xob_run_serial_provisioning", "XOB_BUTTON_LISTEN_GPIO", "esp32c3"]:
         assert token in main_c or token in (FW / "sdkconfig.defaults").read_text(), f"missing {token}"
     for token in ["driver/gpio.h", "driver/usb_serial_jtag.h", "GPIO_NUM_7", "GPIO_NUM_8", "GPIO_NUM_9", "button_task", "serial_command_task"]:
         assert token in main_c, f"missing {token}"
@@ -44,7 +44,7 @@ def main() -> None:
     for token in ["XOB_SCREEN_WIDTH", "XOB_SCREEN_HEIGHT", "XOB_RGB565_WHITE", "XOB_RGB565_BLACK", "xob_screen_render_avatar"]:
         assert token in screen_c or token in (FW / "main" / "screen.h").read_text(), f"missing {token}"
     provisioning_c = (FW / "main" / "provisioning.c").read_text()
-    for token in ["NVS_READWRITE", "nvs_set_str", "nvs_commit", "bridge_url", "device_token", "wifi_ssid", "wifi_password", "esp_http_server", "httpd_start", "WIFI_MODE_APSTA", "esp_restart"]:
+    for token in ["NVS_READWRITE", "nvs_set_str", "nvs_commit", "bridge_url", "device_token", "default_target", "wifi_ssid", "wifi_password", "esp_http_server", "httpd_start", "WIFI_MODE_APSTA", "esp_restart"]:
         assert token in provisioning_c, f"missing {token}"
     build_script = (ROOT / "scripts" / "build_firmware.sh").read_text()
     for token in ["idf.py set-target esp32c3", "idf.py build"]:

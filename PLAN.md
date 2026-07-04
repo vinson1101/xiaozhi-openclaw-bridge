@@ -18,6 +18,7 @@
 - Firmware AP provisioning exists in `docs/PHASE6R_AP_PROVISIONING.md`.
 - Firmware three-button controls exist in `docs/PHASE6S_BUTTON_CONTROLS.md`.
 - Firmware serial text command exists in `docs/PHASE6T_SERIAL_TEXT_COMMAND.md`.
+- Firmware command routing uses `xob.default_target`, falling back to `fake`.
 - No-flash ESP-IDF build path exists in `docs/PHASE6E_BUILD_VALIDATION.md`.
 - First-flash and restore review exists in `docs/PHASE6G_FIRST_FLASH_REVIEW.md`.
 - Sanitized boot log and pin recon exists in `docs/PHASE6H_BOOT_PIN_RECON.md`.
@@ -184,6 +185,7 @@ Tasks:
 - [x] Implement temporary AP plus local HTTP config page for normal WiFi/Bridge setup.
 - [x] Add three-button provisioning entry plus interrupt/listen and volume placeholders.
 - [x] Add USB serial text command to `POST /device/command`.
+- [x] Send configured `default_target` with board-side text commands.
 - [ ] Validate one real `/device/hello` against a reachable Bridge.
 
 Acceptance:
@@ -202,8 +204,9 @@ Tasks:
 - [ ] Upload PCM16 audio frames.
 - [ ] Add ASR provider adapter.
 - [ ] Route recognized text to backend.
-- [ ] Select natural Chinese TTS provider; avoid stiff generic TTS except as fallback.
-- [ ] Add TTS provider adapter.
+- [ ] Define fixed Xiaoyuan voice-pack prompts for wake, confirm, interrupt, error, and setup states.
+- [ ] Use existing Minimax TTS as the first dynamic-answer provider; avoid stiff generic TTS except as fallback.
+- [ ] Add TTS provider adapter with cacheable fixed prompts and replaceable dynamic provider.
 - [ ] Play returned audio on device.
 - [ ] Display recognized text and final answer summary.
 - [ ] Drive eye states from audio lifecycle: listening, thinking, speaking, error.

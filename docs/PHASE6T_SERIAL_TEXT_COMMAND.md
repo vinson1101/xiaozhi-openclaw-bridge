@@ -16,8 +16,9 @@ Typing one line sends:
 POST /device/command
 ```
 
-The payload includes the board `device_id` and the typed `text`. The Bridge
-keeps its existing default target behavior, so no new device protocol was added.
+The payload includes the board `device_id`, configured `target`, and the typed
+`text`. The target comes from `xob.default_target`; missing or empty values fall
+back to `fake`.
 
 The avatar switches to:
 
@@ -31,6 +32,12 @@ The avatar switches to:
 - No screen text rendering yet.
 - No audio recording or playback.
 - No new dependency.
+
+## Agent Routing
+
+The board does not load OpenClaw, Hermas, Zebra, or any other Agent runtime.
+It only stores a small `default_target` routing preference and sends that to the
+Bridge. The Bridge still owns backend selection and Agent execution.
 
 ## Known Blocker
 

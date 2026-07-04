@@ -61,6 +61,7 @@ static bool has_last_avatar_frame;
 typedef struct {
     char bridge_url[128];
     char device_token[64];
+    char default_target[16];
     char wifi_ssid[33];
     char wifi_password[65];
 } app_config_t;
@@ -108,9 +109,13 @@ static esp_err_t load_config(app_config_t *config) {
 
     esp_err_t url_err = read_string(nvs, "bridge_url", config->bridge_url, sizeof(config->bridge_url));
     esp_err_t token_err = read_string(nvs, "device_token", config->device_token, sizeof(config->device_token));
+    esp_err_t target_err = read_string(nvs, "default_target", config->default_target, sizeof(config->default_target));
     esp_err_t ssid_err = read_string(nvs, "wifi_ssid", config->wifi_ssid, sizeof(config->wifi_ssid));
     esp_err_t pass_err = read_string(nvs, "wifi_password", config->wifi_password, sizeof(config->wifi_password));
     nvs_close(nvs);
+    if (target_err == ESP_ERR_NVS_NOT_FOUND || strlen(config->default_target) == 0) {
+        strlcpy(config->default_target, "fake", sizeof(config->default_target));
+    }
 
     if (url_err == ESP_ERR_NVS_NOT_FOUND || token_err == ESP_ERR_NVS_NOT_FOUND ||
         ssid_err == ESP_ERR_NVS_NOT_FOUND || pass_err == ESP_ERR_NVS_NOT_FOUND) {
@@ -119,6 +124,9 @@ static esp_err_t load_config(app_config_t *config) {
     }
     ESP_RETURN_ON_ERROR(url_err, TAG, "read bridge_url");
     ESP_RETURN_ON_ERROR(token_err, TAG, "read device_token");
+    if (target_err != ESP_ERR_NVS_NOT_FOUND) {
+        ESP_RETURN_ON_ERROR(target_err, TAG, "read default_target");
+    }
     ESP_RETURN_ON_ERROR(ssid_err, TAG, "read wifi_ssid");
     ESP_RETURN_ON_ERROR(pass_err, TAG, "read wifi_password");
     trim_trailing_slash(config->bridge_url);
@@ -484,6 +492,11 @@ static esp_err_t post_device_command(const app_config_t *config, const char *tex
     if (!json_escape(escaped_text, sizeof(escaped_text), text)) {
         return ESP_ERR_INVALID_SIZE;
     }
+    char escaped_target[32];
+    const char *target = strlen(config->default_target) > 0 ? config->default_target : "fake";
+    if (!json_escape(escaped_target, sizeof(escaped_target), target)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     char url[180];
     snprintf(url, sizeof(url), "%s/device/command", config->bridge_url);
@@ -495,8 +508,9 @@ static esp_err_t post_device_command(const app_config_t *config, const char *tex
     snprintf(
         body,
         sizeof(body),
-        "{\"device_id\":\"%s\",\"text\":\"%s\"}",
+        "{\"device_id\":\"%s\",\"target\":\"%s\",\"text\":\"%s\"}",
         device_id,
+        escaped_target,
         escaped_text
     );
 
@@ -797,6 +811,7 @@ void app_main(void) {
     ESP_LOGI(TAG, "XOB firmware skeleton ready");
     ESP_LOGI(TAG, "bridge_url=%s", strlen(active_config.bridge_url) > 0 ? "configured" : "empty");
     ESP_LOGI(TAG, "device_token=%s", strlen(active_config.device_token) > 0 ? "configured" : "empty");
+    ESP_LOGI(TAG, "default_target=%s", strlen(active_config.default_target) > 0 ? active_config.default_target : "fake");
     ESP_LOGI(TAG, "wifi_ssid=%s", strlen(active_config.wifi_ssid) > 0 ? "configured" : "empty");
     err = post_device_hello(&active_config);
     if (err != ESP_OK) {

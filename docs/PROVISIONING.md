@@ -37,8 +37,9 @@ The AP name is `XOB-<device-suffix>`. The temporary AP password is
 `xob-<lowercase device-suffix>`. The local form writes only the `xob` namespace.
 
 The implemented paths are USB serial provisioning and temporary AP provisioning.
-Both accept `bridge_url`, `device_token`, `wifi_ssid`, and `wifi_password`, then
-write only the `xob` namespace and reboot.
+Both accept `bridge_url`, `device_token`, `default_target`, `wifi_ssid`, and
+`wifi_password`, then write only the `xob` namespace and reboot. If
+`default_target` is missing or empty, firmware falls back to `fake`.
 
 During development, a WiFi connection failure also falls back to the same
 provisioning mode. This lets the operator correct SSID, password, Bridge URL, or

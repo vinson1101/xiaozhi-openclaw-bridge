@@ -41,7 +41,7 @@ OpenClaw / Hermas / Zebra adapters
 - NVS 保存 WiFi、Bridge 地址、配对 token、音量和默认后端。
 - HTTP JSON 先连接 Bridge；WebSocket 等音频流阶段再加。
 - MVP 使用中键打断当前对话并进入按键聆听，不做离线唤醒词。未来中文唤醒/ASR 触发短语优先用 `你好，小元`，备选 `小元小元`。
-- 因为官方小智语音链路已被替换，TTS 选择放在 Bridge 侧，优先自然中文、低延迟、可流式/分段播放、可替换 provider；机械感强的普通 TTS 只作调试 fallback。
+- 因为官方小智语音链路已被替换，声音分成固定语音包和动态 TTS：固定短句预生成并缓存，动态回答先用已有 Minimax TTS 接口做第一版 Bridge provider；机械感强的普通 TTS 只作调试 fallback。
 
 首版不引入复杂 UI 框架。当前 C3 内存有限，M5Stack Avatar / StackChan 的价值是“灵动眼睛和人格化状态”，不是要求直接移植它们的库。
 
@@ -286,9 +286,10 @@ TtsProvider.synthesize(text, voice) -> audio
 开发顺序：
 
 1. Text-only：没有 ASR/TTS。
-2. Mock ASR/TTS：固定文本和固定音频。
-3. Remote ASR/TTS：接实际供应商。
-4. 可选本地 ASR/TTS：只在 VPS 资源允许时做，不在 ESP32-C3 上做。
+2. 固定语音包：唤醒、确认、打断、错误、配置提示等常用短句预生成并缓存。
+3. Mock ASR/TTS：固定文本和固定音频。
+4. Remote ASR/TTS：动态回答先接已有 Minimax TTS，参数固定后再评估其他 provider。
+5. 可选本地 ASR/TTS：只在 VPS 资源允许时做，不在 ESP32-C3 上做。
 
 ## 8. 验证路线
 
