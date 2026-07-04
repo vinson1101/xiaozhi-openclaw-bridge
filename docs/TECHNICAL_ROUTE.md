@@ -41,6 +41,7 @@ OpenClaw / Hermas / Zebra adapters
 - NVS 保存 WiFi、Bridge 地址、配对 token、音量和默认后端。
 - HTTP JSON 先连接 Bridge；WebSocket 等音频流阶段再加。
 - MVP 使用中键打断当前对话并进入按键聆听，不做离线唤醒词。未来中文唤醒/ASR 触发短语优先用 `你好，小元`，备选 `小元小元`。
+- 因为官方小智语音链路已被替换，TTS 选择放在 Bridge 侧，优先自然中文、低延迟、可流式/分段播放、可替换 provider；机械感强的普通 TTS 只作调试 fallback。
 
 首版不引入复杂 UI 框架。当前 C3 内存有限，M5Stack Avatar / StackChan 的价值是“灵动眼睛和人格化状态”，不是要求直接移植它们的库。
 

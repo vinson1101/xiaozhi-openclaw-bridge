@@ -202,6 +202,7 @@ Tasks:
 - [ ] Upload PCM16 audio frames.
 - [ ] Add ASR provider adapter.
 - [ ] Route recognized text to backend.
+- [ ] Select natural Chinese TTS provider; avoid stiff generic TTS except as fallback.
 - [ ] Add TTS provider adapter.
 - [ ] Play returned audio on device.
 - [ ] Display recognized text and final answer summary.
