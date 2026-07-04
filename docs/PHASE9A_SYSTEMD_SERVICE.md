@@ -56,8 +56,8 @@ python3 scripts/check_bridge_health.py http://<reachable-host>:8788
 - No TLS or reverse proxy yet.
 - No public-internet hardening yet.
 - No credentials or API keys in the unit.
-- Device token enforcement is enabled, but token creation and rotation are still
-  manual provisioning steps.
+- Device token enforcement is enabled. Token rotation is an offline host
+  operation through `scripts/rotate_device_credential.py`.
 - Keep OpenClaw, Hermas, Zebra, and provider secrets in host environment or
   service overrides, not in Git.
 

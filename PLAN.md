@@ -44,6 +44,7 @@
 - SQLite backup/restore helper exists in `scripts/bridge_db_backup.py`.
 - Nginx reverse proxy sample exists in `deploy/nginx/xob-bridge.conf`.
 - Deployment service requires device tokens for pairing.
+- Offline device token rotation helper exists in `scripts/rotate_device_credential.py`.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -255,7 +256,7 @@ Goal: make VPS mode safe enough for real use.
 Tasks:
 
 - [x] Add pairing flow.
-- [ ] Add token rotation.
+- [x] Add token rotation.
 - [x] Add reverse proxy sample.
 - [x] Add service unit or container deployment.
 - [x] Add health checks.

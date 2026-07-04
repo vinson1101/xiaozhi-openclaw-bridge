@@ -41,6 +41,14 @@ Deployment can enforce tokened pairing with:
 When this flag is set, `POST /device/hello` without a Bearer token returns
 `401 device token is required`.
 
+Rotate an existing device token offline on the Bridge host:
+
+```sh
+python3 scripts/rotate_device_credential.py /var/lib/xob-bridge/bridge.sqlite3 <device_id>
+```
+
+The script prompts for the new token and stores only its SHA-256 hash.
+
 ## Validation
 
 ```bash
@@ -51,6 +59,7 @@ The smoke test verifies:
 
 - first hello creates a pairing row,
 - require-token mode rejects hello without a token,
+- offline token rotation stores a new hash without the raw token,
 - the pairing stores a token hash, not the raw token,
 - command without the token is rejected,
 - command with the token still routes through the fake backend,
@@ -64,7 +73,6 @@ smoke_device_http ok
 
 ## Deferred
 
-- Token rotation.
 - Explicit admin pairing API.
 - TLS and reverse proxy deployment.
 - WebSocket device protocol.
