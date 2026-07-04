@@ -5,10 +5,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 UNIT = ROOT / "deploy" / "systemd" / "xob-bridge.service"
+HEALTH_CHECK = ROOT / "scripts" / "check_bridge_health.py"
 
 
 def main() -> None:
     text = UNIT.read_text()
+    assert HEALTH_CHECK.exists(), "missing health check script"
     for token in [
         "User=xob",
         "PYTHONPATH=/opt/xiaozhi-openclaw-bridge/src",

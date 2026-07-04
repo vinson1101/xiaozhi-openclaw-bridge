@@ -40,6 +40,7 @@
 - Public GitHub remote exists at `https://github.com/vinson1101/xiaozhi-openclaw-bridge`.
 - Systemd Bridge service template exists in `deploy/systemd/xob-bridge.service`.
 - Bridge HTTP request logs print method, path, and status only.
+- Bridge health check script exists in `scripts/check_bridge_health.py`.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -254,7 +255,7 @@ Tasks:
 - [ ] Add token rotation.
 - [ ] Add reverse proxy sample.
 - [x] Add service unit or container deployment.
-- [ ] Add health checks.
+- [x] Add health checks.
 - [ ] Add backup/restore for SQLite.
 - [x] Add logging without secret leakage.
 

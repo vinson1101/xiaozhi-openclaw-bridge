@@ -32,13 +32,20 @@ sudo rsync -a --delete ./ /opt/xiaozhi-openclaw-bridge/
 sudo cp /opt/xiaozhi-openclaw-bridge/deploy/systemd/xob-bridge.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now xob-bridge
-curl http://127.0.0.1:8788/healthz
+python3 /opt/xiaozhi-openclaw-bridge/scripts/check_bridge_health.py http://127.0.0.1:8788
 ```
 
 Then configure the board `bridge_url` to the reachable host URL, for example:
 
 ```text
 http://<reachable-host>:8788
+```
+
+Before changing the board, verify that same URL from a host on the same network
+path:
+
+```sh
+python3 scripts/check_bridge_health.py http://<reachable-host>:8788
 ```
 
 ## Boundaries
