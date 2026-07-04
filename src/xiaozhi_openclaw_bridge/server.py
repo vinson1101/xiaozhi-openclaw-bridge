@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -17,16 +18,22 @@ class BridgeApplication:
         self.store = EventStore(db_path)
         self.store.init()
 
-    def handle(self, method: str, target: str, body: bytes | None) -> tuple[int, dict[str, Any]]:
+    def handle(
+        self,
+        method: str,
+        target: str,
+        body: bytes | None,
+        headers: Mapping[str, str] | None = None,
+    ) -> tuple[int, dict[str, Any]]:
         path = urlsplit(target).path
         if method == "GET" and path == "/healthz":
             return 200, {"status": "ok"}
         if method == "POST" and path == "/command":
             return self._command(body)
         if method == "POST" and path == "/device/hello":
-            return self._device_hello(body)
+            return self._device_hello(body, headers or {})
         if method == "POST" and path == "/device/command":
-            return self._device_command(body)
+            return self._device_command(body, headers or {})
         return 404, {"error": "not_found"}
 
     def _command(self, body: bytes | None) -> tuple[int, dict[str, Any]]:
@@ -35,20 +42,40 @@ class BridgeApplication:
             return 400, {"error": error}
         return self._run_command(payload)
 
-    def _device_hello(self, body: bytes | None) -> tuple[int, dict[str, Any]]:
+    def _device_hello(self, body: bytes | None, headers: Mapping[str, str]) -> tuple[int, dict[str, Any]]:
         payload, error = _parse_json(body or b"{}")
         if error:
             return 400, {"error": error}
 
         device_id = str(payload.get("device_id") or "").strip() or f"device-{uuid4().hex[:8]}"
+        token_hash = _token_hash(_bearer_token(headers))
+        pairing = self.store.get_device_pairing(device_id)
+        if pairing is not None:
+            auth_error = _authorize_pairing(pairing["token_hash"], token_hash)
+            if auth_error is not None:
+                return auth_error
+
+        firmware = str(payload.get("firmware") or "")
+        capabilities = payload.get("capabilities") or []
+        if not isinstance(capabilities, list):
+            return 400, {"error": "capabilities must be an array"}
+        self.store.upsert_device_pairing(
+            device_id=device_id,
+            name=str(payload.get("name") or device_id),
+            token_hash=token_hash,
+            firmware=firmware,
+            capabilities=capabilities,
+        )
+
         session_id = str(payload.get("session_id") or self.store.create_session("device"))
         self.store.append_event(
             session_id,
             "device.hello",
             {
                 "device_id": device_id,
-                "firmware": str(payload.get("firmware") or ""),
-                "capabilities": payload.get("capabilities") or [],
+                "firmware": firmware,
+                "capabilities": capabilities,
+                "paired": True,
             },
         )
         return 200, {
@@ -56,9 +83,10 @@ class BridgeApplication:
             "session_id": session_id,
             "protocol": "http-json-v1",
             "state": "ready",
+            "paired": True,
         }
 
-    def _device_command(self, body: bytes | None) -> tuple[int, dict[str, Any]]:
+    def _device_command(self, body: bytes | None, headers: Mapping[str, str]) -> tuple[int, dict[str, Any]]:
         payload, error = _parse_json(body)
         if error:
             return 400, {"error": error}
@@ -66,6 +94,13 @@ class BridgeApplication:
         device_id = str(payload.get("device_id") or "").strip()
         if not device_id:
             return 400, {"error": "device_id is required"}
+        pairing = self.store.get_device_pairing(device_id)
+        if pairing is None:
+            return 403, {"error": "device is not paired"}
+        auth_error = _authorize_pairing(pairing["token_hash"], _token_hash(_bearer_token(headers)))
+        if auth_error is not None:
+            return auth_error
+        self.store.touch_device_pairing(device_id)
 
         status, result = self._run_command(payload, source={"type": "device", "device_id": device_id})
         if status != 200:
@@ -154,7 +189,8 @@ def build_server(host: str, port: int, db_path: str | Path) -> ThreadingHTTPServ
         def _handle(self) -> None:
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else None
-            status, payload = app.handle(self.command, self.path, body)
+            headers = {key.lower(): value for key, value in self.headers.items()}
+            status, payload = app.handle(self.command, self.path, body, headers)
             encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -175,6 +211,26 @@ def _parse_json(body: bytes | None) -> tuple[dict[str, Any], str | None]:
     if not isinstance(payload, dict):
         return {}, "request body must be a JSON object"
     return payload, None
+
+
+def _bearer_token(headers: Mapping[str, str]) -> str:
+    value = headers.get("authorization", "")
+    prefix = "Bearer "
+    if not value.startswith(prefix):
+        return ""
+    return value[len(prefix):].strip()
+
+
+def _token_hash(token: str) -> str:
+    if not token:
+        return ""
+    return "sha256:" + hashlib.sha256(token.encode()).hexdigest()
+
+
+def _authorize_pairing(stored_hash: str, request_hash: str) -> tuple[int, dict[str, Any]] | None:
+    if stored_hash and request_hash != stored_hash:
+        return 401, {"error": "invalid device token"}
+    return None
 
 
 def _device_state(status: str) -> str:

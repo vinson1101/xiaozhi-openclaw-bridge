@@ -9,6 +9,7 @@
 - Text Bridge MVP exists in `docs/PHASE1_TEXT_BRIDGE.md`.
 - OpenClaw SSH adapter exists in `docs/PHASE2_OPENCLAW_ADAPTER.md`.
 - Device HTTP simulator exists in `docs/PHASE4_DEVICE_HTTP.md`.
+- Durable device pairing exists in `docs/PHASE4B_DEVICE_PAIRING.md`.
 - Hardware recon exists in `docs/PHASE5_HARDWARE_RECON.md`.
 - Firmware skeleton exists in `docs/PHASE6_FIRMWARE_SKELETON.md`.
 - Firmware WiFi hello exists in `docs/PHASE6B_WIFI_HELLO.md`.
@@ -118,7 +119,7 @@ Tasks:
 - [ ] Add WebSocket `/device`.
 - [x] Implement HTTP `hello` and `command.text`.
 - [x] Add simulator script.
-- [ ] Store device pairing in SQLite.
+- [x] Store device pairing in SQLite.
 - [ ] Add reconnect behavior to simulator.
 
 Acceptance:
@@ -248,10 +249,10 @@ Acceptance:
 
 ## Next Task
 
-Start with Phase 4B / Phase 6Q:
+Start with Phase 6Q:
 
 ```text
-implement durable device pairing in SQLite, then provision the board against a local Bridge and validate a real /device/hello
+provision the board against a local Bridge and validate a real /device/hello
 ```
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

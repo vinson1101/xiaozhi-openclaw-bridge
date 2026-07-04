@@ -8,6 +8,7 @@ This slice proves the device-to-bridge path before firmware work.
 - `POST /device/command`
 - simulator smoke test
 - event trail in the existing SQLite `session_events` table
+- durable pairing in the SQLite `device_pairings` table
 
 WebSocket is intentionally deferred until the firmware protocol needs it. The current project has no WebSocket dependency, and HTTP JSON is enough to validate routing.
 
@@ -18,6 +19,7 @@ Hello:
 ```bash
 curl -sS http://127.0.0.1:8788/device/hello \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <device_token>' \
   -d '{"device_id":"sim-esp32-c3","firmware":"simulator","capabilities":["display","text"]}'
 ```
 
@@ -26,8 +28,11 @@ Command:
 ```bash
 curl -sS http://127.0.0.1:8788/device/command \
   -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <device_token>' \
   -d '{"device_id":"sim-esp32-c3","session_id":"<session_id>","target":"fake","text":"你好，检查链路"}'
 ```
+
+For local simulator-only development the token may be omitted. For real devices, provision a token; the Bridge stores only its SHA-256 hash.
 
 Response shape:
 
@@ -61,7 +66,6 @@ smoke_device_http ok
 ## Deferred
 
 - WebSocket `/device`
-- durable device pairing table
 - reconnect semantics
 - binary audio frames
 

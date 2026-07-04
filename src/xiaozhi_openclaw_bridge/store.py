@@ -44,6 +44,16 @@ class EventStore:
                     UNIQUE(session_id, seq),
                     FOREIGN KEY(session_id) REFERENCES sessions(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS device_pairings (
+                    device_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    token_hash TEXT NOT NULL,
+                    firmware TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -102,4 +112,52 @@ class EventStore:
                     """,
                     (session_id,),
                 )
+            )
+
+    def get_device_pairing(self, device_id: str) -> sqlite3.Row | None:
+        with self.connect() as conn:
+            return conn.execute(
+                """
+                SELECT device_id, name, token_hash, firmware, capabilities_json, created_at, last_seen_at
+                FROM device_pairings
+                WHERE device_id = ?
+                """,
+                (device_id,),
+            ).fetchone()
+
+    def upsert_device_pairing(
+        self,
+        device_id: str,
+        name: str,
+        token_hash: str,
+        firmware: str,
+        capabilities: list[Any],
+    ) -> None:
+        now = utc_now()
+        capabilities_json = json.dumps(capabilities, ensure_ascii=False, sort_keys=True)
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO device_pairings (
+                    device_id, name, token_hash, firmware, capabilities_json, created_at, last_seen_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(device_id) DO UPDATE SET
+                    name = excluded.name,
+                    token_hash = CASE
+                        WHEN device_pairings.token_hash = '' THEN excluded.token_hash
+                        ELSE device_pairings.token_hash
+                    END,
+                    firmware = excluded.firmware,
+                    capabilities_json = excluded.capabilities_json,
+                    last_seen_at = excluded.last_seen_at
+                """,
+                (device_id, name, token_hash, firmware, capabilities_json, now, now),
+            )
+
+    def touch_device_pairing(self, device_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE device_pairings SET last_seen_at = ? WHERE device_id = ?",
+                (utc_now(), device_id),
             )

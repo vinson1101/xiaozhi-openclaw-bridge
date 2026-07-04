@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,15 +26,30 @@ def main() -> None:
             host, port = server.server_address
             _wait_for_health(host, port)
             base = f"http://{host}:{port}"
+            token = "dev-pairing-token"
             hello = _post_json(
                 f"{base}/device/hello",
                 {
                     "device_id": "sim-esp32-c3",
+                    "name": "simulator",
                     "firmware": "simulator",
                     "capabilities": ["display", "text"],
                 },
+                token=token,
             )
             assert hello["state"] == "ready"
+            assert hello["paired"] is True
+            missing_auth = _post_json_expect_error(
+                f"{base}/device/command",
+                {
+                    "device_id": hello["device_id"],
+                    "session_id": hello["session_id"],
+                    "target": "fake",
+                    "text": "这条不应该执行",
+                },
+            )
+            assert missing_auth["status"] == 401
+            assert missing_auth["payload"]["error"] == "invalid device token"
             command = _post_json(
                 f"{base}/device/command",
                 {
@@ -42,10 +58,20 @@ def main() -> None:
                     "target": "fake",
                     "text": "你好，检查链路",
                 },
+                token=token,
             )
             assert command["state"] == "result"
             assert "Fake 后端" in command["result"]["text"]
             with sqlite3.connect(db) as conn:
+                pairing = conn.execute(
+                    "SELECT device_id, name, token_hash, firmware, capabilities_json FROM device_pairings WHERE device_id = ?",
+                    (hello["device_id"],),
+                ).fetchone()
+                assert pairing is not None
+                assert pairing[1] == "simulator"
+                assert pairing[2].startswith("sha256:")
+                assert token not in pairing[2]
+                assert pairing[3] == "simulator"
                 rows = conn.execute(
                     "SELECT type FROM session_events WHERE session_id = ? ORDER BY seq",
                     (hello["session_id"],),
@@ -74,15 +100,30 @@ def _wait_for_health(host: str, port: int) -> None:
     raise RuntimeError("server did not become healthy")
 
 
-def _post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
+def _post_json(url: str, payload: dict[str, object], token: str = "") -> dict[str, object]:
+    return _post_json_with_status(url, payload, token=token)[1]
+
+
+def _post_json_expect_error(url: str, payload: dict[str, object]) -> dict[str, object]:
+    try:
+        _post_json_with_status(url, payload, token="")
+    except HTTPError as exc:
+        return {"status": exc.code, "payload": json.loads(exc.read().decode())}
+    raise AssertionError("request unexpectedly succeeded")
+
+
+def _post_json_with_status(url: str, payload: dict[str, object], token: str = "") -> tuple[int, dict[str, object]]:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     req = Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     with urlopen(req, timeout=2) as res:
-        return json.loads(res.read().decode())
+        return res.status, json.loads(res.read().decode())
 
 
 if __name__ == "__main__":

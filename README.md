@@ -18,6 +18,7 @@ Project documents:
 - [docs/PHASE1_TEXT_BRIDGE.md](docs/PHASE1_TEXT_BRIDGE.md): text bridge MVP
 - [docs/PHASE2_OPENCLAW_ADAPTER.md](docs/PHASE2_OPENCLAW_ADAPTER.md): OpenClaw SSH adapter
 - [docs/PHASE4_DEVICE_HTTP.md](docs/PHASE4_DEVICE_HTTP.md): device HTTP simulator
+- [docs/PHASE4B_DEVICE_PAIRING.md](docs/PHASE4B_DEVICE_PAIRING.md): durable device pairing
 - [docs/PHASE5_HARDWARE_RECON.md](docs/PHASE5_HARDWARE_RECON.md): hardware recon before firmware
 - [docs/PHASE6_FIRMWARE_SKELETON.md](docs/PHASE6_FIRMWARE_SKELETON.md): ESP32-C3 firmware skeleton
 - [docs/PHASE6B_WIFI_HELLO.md](docs/PHASE6B_WIFI_HELLO.md): ESP32-C3 WiFi and device hello
