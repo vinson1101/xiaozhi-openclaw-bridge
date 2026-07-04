@@ -260,6 +260,7 @@ Continue Phase 6Q after making a Bridge reachable from the board:
 provision the board against a local Bridge and validate a real /device/hello
 ```
 
-If WiFi changes remain cumbersome, build the temporary AP plus local HTTP config page before continuing Phase 6Q validation.
+If the board is available, flash the Phase 6R firmware and validate the AP setup
+page before continuing Phase 6Q hello validation.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

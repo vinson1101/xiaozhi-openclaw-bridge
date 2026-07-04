@@ -69,4 +69,6 @@ Before changing firmware again, validate LAN reachability from another device
 on the same WiFi by opening the Bridge health endpoint, or run the Bridge on a
 host/VPS that the board can reach.
 
-The next firmware feature should be temporary AP provisioning with a local HTTP form. That gives normal WiFi and Bridge configuration without USB serial tooling.
+Temporary AP provisioning is implemented separately in `PHASE6R_AP_PROVISIONING.md`.
+The next validation step is to flash that build, submit the setup page on the
+real board, then point the board at a Bridge host it can actually reach.
