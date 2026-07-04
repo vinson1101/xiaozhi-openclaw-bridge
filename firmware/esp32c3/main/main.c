@@ -12,6 +12,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -21,6 +22,8 @@
 #include "nvs_flash.h"
 #include "ping/ping_sock.h"
 #include "lwip/ip_addr.h"
+#include "lwip/netdb.h"
+#include "lwip/sockets.h"
 
 #include "eyes.h"
 #include "lcd.h"
@@ -65,6 +68,11 @@ typedef struct {
     char wifi_ssid[33];
     char wifi_password[65];
 } app_config_t;
+
+typedef struct {
+    char host[96];
+    uint16_t port;
+} bridge_endpoint_t;
 
 static app_config_t active_config;
 
@@ -314,6 +322,29 @@ static bool bridge_url_ipv4_target(const char *bridge_url, ip_addr_t *out) {
     return len > 0 && ipaddr_aton(host_buf, out) == 1 && out->type == IPADDR_TYPE_V4;
 }
 
+static bool bridge_http_endpoint(const char *bridge_url, bridge_endpoint_t *out) {
+    const char *host = strstr(bridge_url, "http://");
+    if (host == NULL) {
+        return false;
+    }
+    host += strlen("http://");
+    size_t len = 0;
+    while (host[len] != '\0' && host[len] != ':' && host[len] != '/' && len + 1 < sizeof(out->host)) {
+        out->host[len] = host[len];
+        len++;
+    }
+    out->host[len] = '\0';
+    out->port = 80;
+    if (host[len] == ':') {
+        int port = atoi(host + len + 1);
+        if (port <= 0 || port > 65535) {
+            return false;
+        }
+        out->port = (uint16_t)port;
+    }
+    return len > 0;
+}
+
 static void log_network_diagnostics(const app_config_t *config) {
     if (wifi_netif == NULL) {
         ESP_LOGW(TAG, "netif diagnostics skipped: no STA netif");
@@ -434,7 +465,7 @@ static esp_err_t post_device_hello(const app_config_t *config) {
     snprintf(
         body,
         sizeof(body),
-        "{\"device_id\":\"%s\",\"firmware\":\"xob-esp32c3\",\"capabilities\":[\"display\",\"text\",\"audio_upload\"]}",
+        "{\"device_id\":\"%s\",\"firmware\":\"xob-esp32c3\",\"capabilities\":[\"display\",\"text\",\"audio_upload\",\"websocket\"]}",
         device_id
     );
 
@@ -588,6 +619,191 @@ static esp_err_t post_device_audio_probe(const app_config_t *config) {
     return (status >= 200 && status < 300) ? ESP_OK : ESP_FAIL;
 }
 
+static int recv_some(int sock, char *buffer, size_t buffer_len, int timeout_ms) {
+    struct timeval timeout = {
+        .tv_sec = timeout_ms / 1000,
+        .tv_usec = (timeout_ms % 1000) * 1000,
+    };
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    return recv(sock, buffer, buffer_len, 0);
+}
+
+static esp_err_t recv_exact(int sock, void *buffer, size_t len) {
+    uint8_t *out = (uint8_t *)buffer;
+    size_t pos = 0;
+    while (pos < len) {
+        int got = recv(sock, out + pos, len - pos, 0);
+        if (got <= 0) {
+            return ESP_FAIL;
+        }
+        pos += got;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t websocket_send_masked_text(int sock, const char *text) {
+    size_t len = strlen(text);
+    if (len >= 256) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    uint8_t mask[4];
+    uint32_t random = esp_random();
+    memcpy(mask, &random, sizeof(mask));
+
+    uint8_t header[8] = {0x81, 0, 0, 0, mask[0], mask[1], mask[2], mask[3]};
+    size_t header_len = 6;
+    if (len < 126) {
+        header[1] = 0x80 | (uint8_t)len;
+        header[2] = mask[0];
+        header[3] = mask[1];
+        header[4] = mask[2];
+        header[5] = mask[3];
+    } else {
+        header[1] = 0x80 | 126;
+        header[2] = (uint8_t)(len >> 8);
+        header[3] = (uint8_t)len;
+        header_len = 8;
+    }
+    if (send(sock, header, header_len, 0) != (int)header_len) {
+        return ESP_FAIL;
+    }
+    char masked[256];
+    for (size_t i = 0; i < len; i++) {
+        masked[i] = text[i] ^ mask[i % 4];
+    }
+    return send(sock, masked, len, 0) == (int)len ? ESP_OK : ESP_FAIL;
+}
+
+static esp_err_t recv_websocket_text(int sock, char *out, size_t out_len) {
+    uint8_t header[2];
+    if (recv_exact(sock, header, sizeof(header)) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    size_t len = header[1] & 0x7f;
+    if (len == 126) {
+        uint8_t extended[2];
+        if (recv_exact(sock, extended, sizeof(extended)) != ESP_OK) {
+            return ESP_FAIL;
+        }
+        len = ((size_t)extended[0] << 8) | extended[1];
+    } else if (len == 127) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if ((header[0] & 0x0f) != 1 || len >= out_len) {
+        return ESP_FAIL;
+    }
+    if (recv_exact(sock, out, len) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    out[len] = '\0';
+    return ESP_OK;
+}
+
+static esp_err_t probe_xiaozhi_websocket(const app_config_t *config) {
+    bridge_endpoint_t endpoint = {0};
+    if (!bridge_http_endpoint(config->bridge_url, &endpoint)) {
+        ESP_LOGW(TAG, "websocket probe supports http:// Bridge URLs only");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    struct addrinfo hints = {
+        .ai_family = AF_INET,
+        .ai_socktype = SOCK_STREAM,
+    };
+    char port[8];
+    snprintf(port, sizeof(port), "%u", endpoint.port);
+    struct addrinfo *res = NULL;
+    int gai = getaddrinfo(endpoint.host, port, &hints, &res);
+    if (gai != 0 || res == NULL) {
+        ESP_LOGW(TAG, "websocket probe DNS failed: %d", gai);
+        return ESP_FAIL;
+    }
+
+    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock < 0) {
+        freeaddrinfo(res);
+        return ESP_FAIL;
+    }
+    esp_err_t err = connect(sock, res->ai_addr, res->ai_addrlen) == 0 ? ESP_OK : ESP_FAIL;
+    freeaddrinfo(res);
+    if (err != ESP_OK) {
+        close(sock);
+        ESP_LOGW(TAG, "websocket probe connect failed");
+        return err;
+    }
+
+    char device_id[24];
+    make_device_id(device_id, sizeof(device_id));
+    char auth[96] = "";
+    if (strlen(config->device_token) > 0) {
+        snprintf(auth, sizeof(auth), "Authorization: Bearer %s\r\n", config->device_token);
+    }
+    char request[512];
+    snprintf(
+        request,
+        sizeof(request),
+        "GET /device/ws HTTP/1.1\r\n"
+        "Host: %s:%u\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "%s"
+        "Protocol-Version: 1\r\n"
+        "Device-Id: %s\r\n"
+        "Client-Id: %s\r\n"
+        "\r\n",
+        endpoint.host,
+        endpoint.port,
+        auth,
+        device_id,
+        device_id
+    );
+    if (send(sock, request, strlen(request), 0) != (int)strlen(request)) {
+        close(sock);
+        return ESP_FAIL;
+    }
+
+    char response[512];
+    int total = 0;
+    while (total + 1 < (int)sizeof(response)) {
+        int got = recv_some(sock, response + total, sizeof(response) - total - 1, 3000);
+        if (got <= 0) {
+            close(sock);
+            return ESP_FAIL;
+        }
+        total += got;
+        response[total] = '\0';
+        if (strstr(response, "\r\n\r\n") != NULL) {
+            break;
+        }
+    }
+    if (strstr(response, " 101 ") == NULL) {
+        close(sock);
+        ESP_LOGW(TAG, "websocket probe upgrade failed");
+        return ESP_FAIL;
+    }
+
+    const char hello[] =
+        "{\"type\":\"hello\",\"version\":1,\"features\":{\"mcp\":true},"
+        "\"transport\":\"websocket\",\"audio_params\":{\"format\":\"opus\","
+        "\"sample_rate\":16000,\"channels\":1,\"frame_duration\":60}}";
+    err = websocket_send_masked_text(sock, hello);
+    if (err == ESP_OK) {
+        char message[256];
+        err = recv_websocket_text(sock, message, sizeof(message));
+        if (err == ESP_OK &&
+            strstr(message, "\"type\": \"hello\"") != NULL &&
+            strstr(message, "\"transport\": \"websocket\"") != NULL) {
+            ESP_LOGI(TAG, "websocket hello complete");
+        } else {
+            err = ESP_FAIL;
+        }
+    }
+    close(sock);
+    return err;
+}
+
 static esp_err_t ensure_usb_command_serial(void) {
     usb_serial_jtag_driver_config_t config = {
         .tx_buffer_size = 256,
@@ -627,6 +843,21 @@ static void serial_command_task(void *arg) {
             if (strcmp(line, ":voice") == 0 || strcmp(line, ":audio") == 0) {
                 set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
                 err = post_device_audio_probe(config);
+                set_avatar_state(
+                    err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
+                    avatar_wifi_status,
+                    err == ESP_OK ? XOB_SCREEN_STATUS_OK : XOB_SCREEN_STATUS_ERROR
+                );
+                if (err == ESP_OK) {
+                    vTaskDelay(pdMS_TO_TICKS(1200));
+                    set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+                }
+                len = 0;
+                continue;
+            }
+            if (strcmp(line, ":ws") == 0) {
+                set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
+                err = probe_xiaozhi_websocket(config);
                 set_avatar_state(
                     err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
                     avatar_wifi_status,

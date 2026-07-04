@@ -60,10 +60,15 @@ This phase does not stream audio yet. It only proves the server-side XiaoZhi
 WebSocket handshake. HTTP `/device/audio` remains a diagnostic probe, not the
 final voice protocol.
 
+Firmware exposes a serial `:ws` probe for the same handshake. It supports the
+current plain `http://` Bridge URL path only; `wss://` is deferred until the
+firmware has a TLS WebSocket client path.
+
 ## Validation
 
 ```bash
 python3 scripts/check_xiaozhi_ws_handshake.py
+python3 scripts/check_firmware_skeleton.py
 ```
 
 Expected output:
