@@ -14,7 +14,7 @@ deploy/systemd/xob-bridge.service
 The unit runs:
 
 ```text
-python3 -m xiaozhi_openclaw_bridge.server --host 0.0.0.0 --port 8788 --db /var/lib/xob-bridge/bridge.sqlite3 --require-device-token
+python3 -m xiaozhi_openclaw_bridge.server --host 0.0.0.0 --port 8788 --db /var/lib/xob-bridge/bridge.sqlite3 --require-device-token --disable-command-route
 ```
 
 This is an HTTP-only development service. It is useful for a LAN host or a
@@ -58,6 +58,8 @@ python3 scripts/check_bridge_health.py http://<reachable-host>:8788
 - No credentials or API keys in the unit.
 - Device token enforcement is enabled. Token rotation is an offline host
   operation through `scripts/rotate_device_credential.py`.
+- The generic `/command` route is disabled in the deploy unit. Public hosts
+  should expose only `/healthz` and `/device/*`.
 - Keep OpenClaw, Hermas, Zebra, and provider secrets in host environment or
   service overrides, not in Git.
 

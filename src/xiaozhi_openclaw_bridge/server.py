@@ -14,8 +14,14 @@ from xiaozhi_openclaw_bridge.store import EventStore
 
 
 class BridgeApplication:
-    def __init__(self, db_path: str | Path, require_device_token: bool = False) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        require_device_token: bool = False,
+        allow_command_route: bool = True,
+    ) -> None:
         self.require_device_token = require_device_token
+        self.allow_command_route = allow_command_route
         self.store = EventStore(db_path)
         self.store.init()
 
@@ -30,6 +36,8 @@ class BridgeApplication:
         if method == "GET" and path == "/healthz":
             return 200, {"status": "ok"}
         if method == "POST" and path == "/command":
+            if not self.allow_command_route:
+                return 404, {"error": "not_found"}
             return self._command(body)
         if method == "POST" and path == "/device/hello":
             return self._device_hello(body, headers or {})
@@ -176,8 +184,18 @@ class BridgeApplication:
         }
 
 
-def build_server(host: str, port: int, db_path: str | Path, require_device_token: bool = False) -> ThreadingHTTPServer:
-    app = BridgeApplication(db_path, require_device_token=require_device_token)
+def build_server(
+    host: str,
+    port: int,
+    db_path: str | Path,
+    require_device_token: bool = False,
+    allow_command_route: bool = True,
+) -> ThreadingHTTPServer:
+    app = BridgeApplication(
+        db_path,
+        require_device_token=require_device_token,
+        allow_command_route=allow_command_route,
+    )
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
@@ -258,8 +276,15 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--db", default="data/bridge.sqlite3")
     parser.add_argument("--require-device-token", action="store_true")
+    parser.add_argument("--disable-command-route", action="store_true")
     args = parser.parse_args()
-    server = build_server(args.host, args.port, args.db, require_device_token=args.require_device_token)
+    server = build_server(
+        args.host,
+        args.port,
+        args.db,
+        require_device_token=args.require_device_token,
+        allow_command_route=not args.disable_command_route,
+    )
     print(f"listening on http://{args.host}:{args.port}")
     server.serve_forever()
 

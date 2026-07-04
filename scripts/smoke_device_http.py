@@ -111,7 +111,13 @@ def main() -> None:
             server.server_close()
             thread.join(timeout=2)
         secure_db = Path(tmp) / "secure.sqlite3"
-        secure_server = build_server("127.0.0.1", 0, secure_db, require_device_token=True)
+        secure_server = build_server(
+            "127.0.0.1",
+            0,
+            secure_db,
+            require_device_token=True,
+            allow_command_route=False,
+        )
         secure_thread = threading.Thread(target=secure_server.serve_forever, daemon=True)
         secure_thread.start()
         try:
@@ -123,6 +129,12 @@ def main() -> None:
             )
             assert denied["status"] == 401
             assert denied["payload"]["error"] == "device token is required"
+            blocked = _post_json_expect_error(
+                f"http://{host}:{port}/command",
+                {"target": "fake", "text": "不应该公开"},
+            )
+            assert blocked["status"] == 404
+            assert blocked["payload"]["error"] == "not_found"
         finally:
             secure_server.shutdown()
             secure_server.server_close()

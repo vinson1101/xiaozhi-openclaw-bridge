@@ -51,6 +51,7 @@
 - TTS provider boundary exists with cacheable fixed prompts and a local fake WAV provider.
 - Recognized text can be routed through the existing Bridge command handler.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
+- Deployment units disable the generic `/command` route for public device hosts.
 
 ## Phase 0 - Design And Safety Baseline
 

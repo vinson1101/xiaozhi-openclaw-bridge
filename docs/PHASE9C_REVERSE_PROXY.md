@@ -18,7 +18,8 @@ http://127.0.0.1:8788
 ```
 
 `xob-bridge-localhost.conf` is a systemd override that makes the Bridge listen
-only on localhost when nginx is in front. It keeps `--require-device-token`.
+only on localhost when nginx is in front. It keeps `--require-device-token` and
+`--disable-command-route`.
 
 ## Install Sketch
 

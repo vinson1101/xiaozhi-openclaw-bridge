@@ -10,7 +10,7 @@ Group=xob
 WorkingDirectory=/opt/xiaozhi-openclaw-bridge
 Environment=PYTHONPATH=/opt/xiaozhi-openclaw-bridge/src
 StateDirectory=xob-bridge
-ExecStart=/usr/bin/python3 -m xiaozhi_openclaw_bridge.server --host 0.0.0.0 --port 8788 --db /var/lib/xob-bridge/bridge.sqlite3 --require-device-token
+ExecStart=/usr/bin/python3 -m xiaozhi_openclaw_bridge.server --host 0.0.0.0 --port 8788 --db /var/lib/xob-bridge/bridge.sqlite3 --require-device-token --disable-command-route
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
