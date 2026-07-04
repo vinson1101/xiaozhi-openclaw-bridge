@@ -16,6 +16,7 @@
 - Firmware eye render commands exist in `docs/PHASE6C_EYE_RENDER.md`.
 - Firmware USB serial provisioning exists in `docs/PHASE6D_SERIAL_PROVISIONING.md`.
 - Firmware AP provisioning exists in `docs/PHASE6R_AP_PROVISIONING.md`.
+- Firmware three-button controls exist in `docs/PHASE6S_BUTTON_CONTROLS.md`.
 - No-flash ESP-IDF build path exists in `docs/PHASE6E_BUILD_VALIDATION.md`.
 - First-flash and restore review exists in `docs/PHASE6G_FIRST_FLASH_REVIEW.md`.
 - Sanitized boot log and pin recon exists in `docs/PHASE6H_BOOT_PIN_RECON.md`.
@@ -28,7 +29,7 @@
 - First custom firmware flash and avatar check exists in `docs/PHASE6O_FIRST_CUSTOM_FLASH.md`.
 - WiFi and Bridge status display exists in `docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md`.
 - Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
-- ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xf99f0`, with 72% of the smallest app partition free.
+- ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xf9e70`, with 72% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
 - Provisioning plan exists in `docs/PROVISIONING.md`.
@@ -180,6 +181,7 @@ Tasks:
 - [x] Provision WiFi config on the flashed board and validate WiFi association.
 - [x] Add board-side gateway, internet, and Bridge-host reachability diagnostics.
 - [x] Implement temporary AP plus local HTTP config page for normal WiFi/Bridge setup.
+- [x] Add three-button provisioning entry plus interrupt/listen and volume placeholders.
 - [ ] Validate one real `/device/hello` against a reachable Bridge.
 
 Acceptance:

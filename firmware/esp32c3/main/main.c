@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
@@ -34,6 +35,17 @@ static int wifi_retry_count;
 static volatile xob_eye_state_t avatar_eye_state = XOB_EYES_IDLE;
 static volatile xob_screen_status_t avatar_wifi_status = XOB_SCREEN_STATUS_OFF;
 static volatile xob_screen_status_t avatar_bridge_status = XOB_SCREEN_STATUS_OFF;
+static bool buttons_ready;
+static bool button_task_started;
+static int local_volume = 50;
+
+#define XOB_BUTTON_VOLUME_DOWN_GPIO GPIO_NUM_7
+#define XOB_BUTTON_LISTEN_GPIO GPIO_NUM_8
+#define XOB_BUTTON_VOLUME_UP_GPIO GPIO_NUM_9
+#define XOB_BUTTON_VOLUME_DOWN BIT0
+#define XOB_BUTTON_LISTEN BIT1
+#define XOB_BUTTON_VOLUME_UP BIT2
+#define XOB_BUTTON_ALL (XOB_BUTTON_VOLUME_DOWN | XOB_BUTTON_LISTEN | XOB_BUTTON_VOLUME_UP)
 
 typedef struct {
     xob_eyes_frame_t eyes;
@@ -472,6 +484,98 @@ static void set_avatar_state(
     avatar_bridge_status = bridge_status;
 }
 
+static esp_err_t init_buttons(void) {
+    gpio_config_t config = {
+        .pin_bit_mask = (1ULL << XOB_BUTTON_VOLUME_DOWN_GPIO) |
+                        (1ULL << XOB_BUTTON_LISTEN_GPIO) |
+                        (1ULL << XOB_BUTTON_VOLUME_UP_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t err = gpio_config(&config);
+    buttons_ready = err == ESP_OK;
+    return err;
+}
+
+static uint8_t button_mask(void) {
+    if (!buttons_ready) {
+        return 0;
+    }
+
+    uint8_t mask = 0;
+    if (gpio_get_level(XOB_BUTTON_VOLUME_DOWN_GPIO) == 0) {
+        mask |= XOB_BUTTON_VOLUME_DOWN;
+    }
+    if (gpio_get_level(XOB_BUTTON_LISTEN_GPIO) == 0) {
+        mask |= XOB_BUTTON_LISTEN;
+    }
+    if (gpio_get_level(XOB_BUTTON_VOLUME_UP_GPIO) == 0) {
+        mask |= XOB_BUTTON_VOLUME_UP;
+    }
+    return mask;
+}
+
+static void enter_button_provisioning(void) {
+    ESP_LOGW(TAG, "all buttons held; entering provisioning");
+    set_avatar_state(XOB_EYES_LISTENING, XOB_SCREEN_STATUS_PENDING, XOB_SCREEN_STATUS_PENDING);
+    xob_start_ap_provisioning();
+    xob_run_serial_provisioning();
+}
+
+static void button_task(void *arg) {
+    (void)arg;
+    uint8_t last = button_mask();
+    int64_t all_pressed_since = 0;
+
+    while (true) {
+        uint8_t mask = button_mask();
+        uint8_t pressed = mask & (uint8_t)~last;
+        int64_t now = esp_timer_get_time();
+
+        if ((mask & XOB_BUTTON_ALL) == XOB_BUTTON_ALL) {
+            if (all_pressed_since == 0) {
+                all_pressed_since = now;
+            } else if (now - all_pressed_since >= 2000000) {
+                enter_button_provisioning();
+            }
+        } else {
+            all_pressed_since = 0;
+            if ((pressed & XOB_BUTTON_VOLUME_DOWN) != 0 && local_volume > 0) {
+                local_volume -= 5;
+                ESP_LOGI(TAG, "volume=%d", local_volume);
+            }
+            if ((pressed & XOB_BUTTON_VOLUME_UP) != 0 && local_volume < 100) {
+                local_volume += 5;
+                ESP_LOGI(TAG, "volume=%d", local_volume);
+            }
+            if ((pressed & XOB_BUTTON_LISTEN) != 0) {
+                ESP_LOGI(TAG, "interrupt/listen button pressed");
+                set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+            }
+            if ((last & XOB_BUTTON_LISTEN) != 0 && (mask & XOB_BUTTON_LISTEN) == 0) {
+                set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+            }
+        }
+
+        last = mask;
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+static void start_button_task(void) {
+    if (!buttons_ready || button_task_started) {
+        return;
+    }
+    BaseType_t created = xTaskCreate(button_task, "xob_buttons", 3072, NULL, 3, NULL);
+    if (created == pdPASS) {
+        button_task_started = true;
+    } else {
+        ESP_LOGW(TAG, "button task not started");
+    }
+}
+
 static esp_err_t draw_avatar_frame(const avatar_frame_t *frame) {
     xob_screen_frame_t screen = xob_screen_render_avatar(&frame->eyes, frame->wifi_status, frame->bridge_status);
     return xob_lcd_draw_frame(&screen);
@@ -522,8 +626,18 @@ void app_main(void) {
         return;
     }
     ESP_ERROR_CHECK(err);
+    esp_log_level_set("wifi", ESP_LOG_WARN);
+    esp_log_level_set("wifi_init", ESP_LOG_WARN);
+    esp_log_level_set("esp_netif_handlers", ESP_LOG_WARN);
 
     start_avatar_screen();
+    err = init_buttons();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "button init skipped: %s", esp_err_to_name(err));
+    } else if ((button_mask() & XOB_BUTTON_ALL) == XOB_BUTTON_ALL) {
+        enter_button_provisioning();
+        return;
+    }
 
     app_config_t config = {0};
     if (load_config(&config) != ESP_OK) {
@@ -540,6 +654,7 @@ void app_main(void) {
         return;
     }
     set_avatar_state(XOB_EYES_THINKING, XOB_SCREEN_STATUS_OK, XOB_SCREEN_STATUS_PENDING);
+    start_button_task();
 
     ESP_LOGI(TAG, "XOB firmware skeleton ready");
     ESP_LOGI(TAG, "bridge_url=%s", strlen(config.bridge_url) > 0 ? "configured" : "empty");

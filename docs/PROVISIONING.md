@@ -44,6 +44,9 @@ During development, a WiFi connection failure also falls back to the same
 provisioning mode. This lets the operator correct SSID, password, Bridge URL, or
 token without erasing flash or touching stock NVS data.
 
+The three physical buttons also enter provisioning: hold all three at app
+startup, or hold all three for two seconds while the firmware is running.
+
 The firmware keeps WiFi driver storage in RAM, then sets WiFi country to CN so 2.4 GHz channels 1-13 are scan/connect candidates. Diagnostic logs may report aggregate scan counts and target match counts, but must not print SSID values, WiFi passwords, device tokens, raw MAC addresses, or Bridge secrets.
 
 The firmware must not call `nvs_flash_erase()` automatically. If NVS recovery is needed, stop and require an explicit restore or erase decision.

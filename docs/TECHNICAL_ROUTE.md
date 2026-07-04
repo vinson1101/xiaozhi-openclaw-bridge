@@ -40,7 +40,7 @@ OpenClaw / Hermas / Zebra adapters
 - ST7789 直接绘制简洁状态 UI。
 - NVS 保存 WiFi、Bridge 地址、配对 token、音量和默认后端。
 - HTTP JSON 先连接 Bridge；WebSocket 等音频流阶段再加。
-- MVP 使用按键录音，不做离线唤醒词。
+- MVP 使用中键打断当前对话并进入按键聆听，不做离线唤醒词。
 
 首版不引入复杂 UI 框架。当前 C3 内存有限，M5Stack Avatar / StackChan 的价值是“灵动眼睛和人格化状态”，不是要求直接移植它们的库。
 
