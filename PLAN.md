@@ -49,6 +49,7 @@
 - Xiaoyuan fixed voice prompts exist in `src/xiaozhi_openclaw_bridge/voice.py`.
 - ASR provider boundary exists with a local fake provider.
 - TTS provider boundary exists with cacheable fixed prompts and a local fake WAV provider.
+- Recognized text can be routed through the existing Bridge command handler.
 
 ## Phase 0 - Design And Safety Baseline
 
@@ -216,7 +217,7 @@ Tasks:
 - [ ] Add press-to-record.
 - [ ] Upload PCM16 audio frames.
 - [x] Add ASR provider adapter.
-- [ ] Route recognized text to backend.
+- [x] Route recognized text to backend.
 - [x] Define fixed Xiaoyuan voice-pack prompts for wake, confirm, interrupt, error, and setup states.
 - [ ] Use existing Minimax TTS as the first dynamic-answer provider; avoid stiff generic TTS except as fallback.
 - [x] Add TTS provider adapter with cacheable fixed prompts and replaceable dynamic provider.

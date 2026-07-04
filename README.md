@@ -42,6 +42,7 @@ Project documents:
 - [docs/PHASE7_VOICE_PROMPTS.md](docs/PHASE7_VOICE_PROMPTS.md): Xiaoyuan fixed voice prompts
 - [docs/PHASE7B_ASR_PROVIDER.md](docs/PHASE7B_ASR_PROVIDER.md): ASR provider adapter
 - [docs/PHASE7C_TTS_PROVIDER.md](docs/PHASE7C_TTS_PROVIDER.md): TTS provider adapter
+- [docs/PHASE7D_VOICE_ROUTE.md](docs/PHASE7D_VOICE_ROUTE.md): voice text routing
 - [docs/PHASE9A_SYSTEMD_SERVICE.md](docs/PHASE9A_SYSTEMD_SERVICE.md): systemd Bridge service template
 - [docs/PHASE9B_SQLITE_BACKUP.md](docs/PHASE9B_SQLITE_BACKUP.md): SQLite backup and restore helper
 - [docs/PHASE9C_REVERSE_PROXY.md](docs/PHASE9C_REVERSE_PROXY.md): nginx reverse proxy sample
