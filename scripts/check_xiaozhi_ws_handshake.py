@@ -21,6 +21,7 @@ from xiaozhi_openclaw_bridge.server import (  # noqa: E402
     BridgeApplication,
     _is_wake_only_transcript,
     _short_spoken_text,
+    _stream_pcm_audio_frames,
     _tts_audio_frames,
     build_server,
 )
@@ -95,6 +96,22 @@ def main() -> None:
             frames = _tts_audio_frames(_with_junk_chunk(_test_wav(4000)), "audio/wav")
             assert len(frames) > 1
             assert all(not frame.startswith(b"RIFF") and len(frame) <= 1000 for frame in frames)
+            old_stream_frame = os.environ.get("XOB_WS_TTS_STREAM_FRAME_BYTES")
+            old_stream_preroll = os.environ.get("XOB_WS_TTS_STREAM_PREROLL_MS")
+            os.environ["XOB_WS_TTS_STREAM_FRAME_BYTES"] = "640"
+            os.environ["XOB_WS_TTS_STREAM_PREROLL_MS"] = "120"
+            streamed = tuple(_stream_pcm_audio_frames((b"\0" * 640, b"\1" * 640, b"\2" * 320)))
+            assert [len(frame) for frame in streamed] == [640, 640, 320]
+            assert streamed[0] == b"\0" * 640
+            assert streamed[1] == b"\1" * 640
+            if old_stream_frame is None:
+                os.environ.pop("XOB_WS_TTS_STREAM_FRAME_BYTES", None)
+            else:
+                os.environ["XOB_WS_TTS_STREAM_FRAME_BYTES"] = old_stream_frame
+            if old_stream_preroll is None:
+                os.environ.pop("XOB_WS_TTS_STREAM_PREROLL_MS", None)
+            else:
+                os.environ["XOB_WS_TTS_STREAM_PREROLL_MS"] = old_stream_preroll
             long_text = "一二三四五六七八九十" * 3
             assert _short_spoken_text(long_text) == long_text
             os.environ["XOB_TTS_SPOKEN_MAX_CHARS"] = "12"

@@ -61,6 +61,8 @@ static TaskHandle_t vb6824_playback_task_handle;
 static volatile size_t vb6824_playback_enqueued_bytes;
 static volatile size_t vb6824_playback_played_bytes;
 static volatile esp_err_t vb6824_playback_error = ESP_OK;
+static volatile int64_t vb6824_playback_last_enqueue_us;
+static volatile bool vb6824_playback_started;
 static int64_t vb6824_ota_last_request_us;
 static char vb6824_ota_code[32];
 static int local_volume = 50;
@@ -90,6 +92,8 @@ static char avatar_output_text[320] = "";
 #define XOB_VB_PLAY_FRAME_DELAY_MS 10
 #define XOB_VB_PLAY_QUEUE_BYTES (32 * 1024)
 #define XOB_VB_PLAY_ENQUEUE_TIMEOUT_MS 5000
+#define XOB_VB_PLAY_PREROLL_BYTES 1920
+#define XOB_VB_PLAY_PREROLL_MAX_WAIT_MS 80
 #define XOB_WS_RECV_TIMEOUT_MS 90000
 #define XOB_WS_MESSAGE_BUFFER_BYTES 16384
 #define XOB_WS_TTS_MAX_FRAMES 192
@@ -1272,6 +1276,14 @@ static uint32_t read_le32(const uint8_t *data) {
 
 static esp_err_t vb6824_play_pcm(const uint8_t *pcm, size_t pcm_len, size_t *queued_bytes);
 
+static void vb6824_prepare_playback_session(void) {
+    vb6824_playback_enqueued_bytes = 0;
+    vb6824_playback_played_bytes = 0;
+    vb6824_playback_last_enqueue_us = 0;
+    vb6824_playback_started = false;
+    vb6824_playback_error = ESP_OK;
+}
+
 static bool wav_pcm16_16k_mono_data(const uint8_t *wav, size_t len, const uint8_t **pcm, size_t *pcm_len) {
     if (len < 44 ||
         memcmp(wav, "RIFF", 4) != 0 ||
@@ -1319,6 +1331,19 @@ static void vb6824_playback_task(void *arg) {
         );
         if (item == NULL) {
             continue;
+        }
+        if (!vb6824_playback_started) {
+            while (true) {
+                size_t buffered_bytes = vb6824_playback_enqueued_bytes - vb6824_playback_played_bytes;
+                int64_t last_enqueue_us = vb6824_playback_last_enqueue_us;
+                int64_t idle_us = last_enqueue_us > 0 ? esp_timer_get_time() - last_enqueue_us : 0;
+                if (buffered_bytes >= XOB_VB_PLAY_PREROLL_BYTES ||
+                    (buffered_bytes > 0 && idle_us >= (int64_t)XOB_VB_PLAY_PREROLL_MAX_WAIT_MS * 1000)) {
+                    vb6824_playback_started = true;
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
         }
         vb6824_audio_capture_active = true;
         esp_err_t err = ensure_vb6824_uart();
@@ -1431,6 +1456,7 @@ static esp_err_t vb6824_play_pcm(const uint8_t *pcm, size_t pcm_len, size_t *pla
         }
         *played_bytes += chunk;
         vb6824_playback_enqueued_bytes += chunk;
+        vb6824_playback_last_enqueue_us = esp_timer_get_time();
     }
     ESP_LOGI(TAG, "vb6824 playback queued pcm bytes=%u", (unsigned)*played_bytes);
     return ESP_OK;
@@ -1682,7 +1708,7 @@ static esp_err_t probe_xiaozhi_websocket(
                 bool saw_tts_stop = false;
                 bool tts_refresh_paused = false;
                 if (err == ESP_OK) {
-                    vb6824_playback_error = ESP_OK;
+                    vb6824_prepare_playback_session();
                 }
                 for (int i = 0; err == ESP_OK && i < XOB_WS_TTS_MAX_FRAMES && !saw_tts_stop; i++) {
                     uint8_t opcode = 0;

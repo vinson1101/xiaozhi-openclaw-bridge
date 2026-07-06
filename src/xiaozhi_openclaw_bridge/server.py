@@ -736,10 +736,9 @@ def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[in
             audio_chunks = _tts_audio_frames(speech.audio, speech.content_type) if speech.status == "done" else ()
             summary = speech.summary
         else:
-            audio_chunks = (
-                frame
+            audio_chunks = _stream_pcm_audio_frames(
+                chunk
                 for chunk in stream_audio(TtsRequest(text=_short_spoken_text(text), voice="xiaoyuan"))
-                for frame in _tts_audio_frames(chunk, "audio/pcm")
             )
             summary = f"{provider.provider} streaming tts"
         for audio in audio_chunks:
@@ -767,6 +766,40 @@ def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[in
 
 def _tts_streaming_enabled() -> bool:
     return (os.environ.get("XOB_TTS_STREAMING") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _stream_pcm_audio_frames(chunks: Any) -> Any:
+    frame_bytes = _positive_int(os.environ.get("XOB_WS_TTS_STREAM_FRAME_BYTES", ""), 640)
+    frame_bytes -= frame_bytes % 2
+    if frame_bytes < 2:
+        frame_bytes = 640
+
+    preroll_ms = _positive_int(os.environ.get("XOB_WS_TTS_STREAM_PREROLL_MS", ""), 120)
+    sample_rate = _positive_int(os.environ.get("XOB_BAILIAN_TTS_SAMPLE_RATE", ""), 16000)
+    bytes_per_second = max(1, sample_rate) * 2
+    preroll_bytes = max(frame_bytes, ((bytes_per_second * preroll_ms) // 1000))
+    preroll_bytes -= preroll_bytes % 2
+
+    pending = bytearray()
+    started = False
+    for chunk in chunks:
+        if not chunk:
+            continue
+        pending.extend(chunk)
+        if not started and len(pending) < preroll_bytes:
+            continue
+        started = True
+        while len(pending) >= frame_bytes:
+            yield bytes(pending[:frame_bytes])
+            del pending[:frame_bytes]
+
+    if pending:
+        if len(pending) % 2 == 1:
+            pending.append(0)
+        while len(pending) > frame_bytes:
+            yield bytes(pending[:frame_bytes])
+            del pending[:frame_bytes]
+        yield bytes(pending)
 
 
 def _split_wav_pcm_frames(wav: bytes, max_bytes: int) -> tuple[bytes, ...]:
