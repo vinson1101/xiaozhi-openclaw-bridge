@@ -137,8 +137,12 @@ static void add_bridge_status(xob_screen_frame_t *frame, int16_t x, int16_t y, x
 }
 
 static void add_status_row(xob_screen_frame_t *frame, xob_screen_status_t wifi_status, xob_screen_status_t bridge_status) {
-    add_wifi_status(frame, 92, 214, wifi_status);
-    add_bridge_status(frame, 126, 216, bridge_status);
+    if (wifi_status != XOB_SCREEN_STATUS_OFF) {
+        add_wifi_status(frame, 8, 8, wifi_status);
+    }
+    if (bridge_status != XOB_SCREEN_STATUS_OFF) {
+        add_bridge_status(frame, 34, 10, bridge_status);
+    }
 }
 
 xob_screen_frame_t xob_screen_render_avatar(

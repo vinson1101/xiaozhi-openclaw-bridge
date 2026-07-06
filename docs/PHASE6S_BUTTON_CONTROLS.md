@@ -21,23 +21,24 @@ constants need to be swapped.
 - All three buttons pressed at app startup enter provisioning.
 - Volume down and volume up held together for two seconds while running enter
   provisioning.
-- The middle button interrupts the current visual conversation state and latches
-  the avatar into `listening`.
+- The middle button follows the upstream XiaoZhi toggle shape: short press
+  starts auto listening from idle, and a second press during an active voice
+  session requests stop/interrupt.
 - Middle long-press is treated as hardware power behavior and is not assigned a
   firmware long-press action.
 - Button mask changes are logged as safe GPIO bitmasks for physical mapping
   checks.
 - Volume buttons adjust an in-memory volume value in 5-point steps.
 
-The volume value is not persisted yet and is not connected to audio output.
-That belongs to Phase 7 when playback exists.
+The volume value is not persisted yet. Phase 7 playback now uses it when sending
+compatible returned WAV/PCM audio to VB6824.
 
 ## Boundaries
 
 - No full NVS erase.
 - No stock configuration reads.
-- No audio recording, TTS stop, server-side cancel, or automatic end-of-listen
-  state transition starts yet.
+- Server-side cancel is still pending; the current stop request only affects
+  the local capture loop.
 - No long-press reset namespace erase yet.
 
 ## Validation
@@ -67,7 +68,7 @@ Real physical button placement and press events remain pending on-board testing.
 Short-pressing the physical middle button does not visibly change the avatar
 state on the current flashed board, even though GPIO 7/8/9 initialize as inputs.
 
-Likely causes to verify later:
+Likely causes to verify on the next flash:
 
 - the physical middle button is not GPIO8,
 - the press is handled by board power circuitry before firmware sees it,

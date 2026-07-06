@@ -39,8 +39,10 @@ OpenClaw / Hermas / Zebra adapters
 - ESP-IDF。
 - ST7789 直接绘制简洁状态 UI。
 - NVS 保存 WiFi、Bridge 地址、配对 token、音量和默认后端。
-- HTTP JSON 先连接 Bridge；WebSocket 等音频流阶段再加。
-- MVP 使用中键打断当前对话并进入按键聆听，不做离线唤醒词。未来中文唤醒/ASR 触发短语优先用 `你好，小元`，备选 `小元小元`。
+- HTTP JSON 连接 Bridge；WebSocket 是当前语音帧主路径。
+- `default_target` 是 agent/backend 路由名，不是 WiFi。AP 配置页和串口
+  `:target <name>` 都可以切换它；当前真实 VPS 验证目标是 `huntmind`。
+- 中键按原小智 `ToggleChatState()` 语义处理：idle 短按进入 `mode:auto` 聆听，active 状态再次短按请求 stop/interrupt。MVP 保留板上默认 `你好小智` 唤醒，不让缺失的 `你好，小元` VB6824 授权码阻塞后续链路。`小元` 继续作为产品人格和后续语音包目标。
 - 因为官方小智语音链路已被替换，声音分成固定语音包和动态 TTS：固定短句预生成并缓存，动态回答先用已有 Minimax TTS 接口做第一版 Bridge provider；机械感强的普通 TTS 只作调试 fallback。
 
 首版不引入复杂 UI 框架。当前 C3 内存有限，M5Stack Avatar / StackChan 的价值是“灵动眼睛和人格化状态”，不是要求直接移植它们的库。
@@ -90,7 +92,7 @@ OpenClaw / Hermas / Zebra adapters
 ```
 
 ```json
-{"session_id":"...","type":"listen","state":"start","mode":"manual"}
+{"session_id":"...","type":"listen","state":"start","mode":"auto"}
 ```
 
 ```json
@@ -105,6 +107,12 @@ OpenClaw / Hermas / Zebra adapters
 
 - 调试探针：HTTP `/device/audio` 可上传短 PCM16，用来验证网络和鉴权。
 - 主路径：按小智原框架使用 WebSocket JSON 控制帧 + 二进制 Opus 音频帧。
+- 播放侧也按小智框架处理：网络收包不直接阻塞播放，服务端音频先进入播放缓冲/队列，再由固定节拍的音频输出路径连续喂给 VB6824；不要把 WebSocket binary frame 边界当作播放节拍。
+- 手动入口：中键短按进入 listening，发送 `listen/start` `mode:auto`，并复用 VB6824 WebSocket 语音路径；串口 `:vb-talk` 仍保留固定 150 帧调试窗口。
+- 唤醒入口：VB6824 UART `0x0180` 离线命令帧命中“小智/小元”后进入 listening，并复用 WebSocket 语音路径；当前 MVP 验收用默认 `你好小智`。
+- 语音包入口：串口 `:vb-ota <code>` 走 VB6824 官方 OTA 库，等拿到“小元”授权码后再更新离线唤醒/命令包。
+- Agent 响应可能需要几十秒。端侧 WebSocket 接收超时按 agent turn 处理，
+  当前为 180 秒，而不是音频帧级短超时。
 - 不新增 MQTT+UDP，除非后续确认 WebSocket 延迟或稳定性不够。
 
 ### 2.4 Bridge 服务层
@@ -158,7 +166,7 @@ Bridge 职责：
 适配顺序：
 
 1. Fake adapter：本地回声和测试。
-2. OpenClaw adapter：优先 HTTP，必要时 CLI 包装。
+2. OpenClaw adapter：当前验证路径是 CLI 包装，`openclaw agent --agent huntmind --message ... --session-key ...`，服务端 Bridge 通过受限 wrapper 调用。
 3. Hermas adapter：等真实 API 明确后接入。
 4. Zebra adapter：创建/恢复 Zebra session，消费事件或轮询状态。
 
@@ -289,7 +297,7 @@ TtsProvider.synthesize(text, voice) -> audio
 1. Text-only：没有 ASR/TTS。
 2. 固定语音包：唤醒、确认、打断、错误、配置提示等常用短句预生成并缓存。
 3. Mock ASR/TTS：固定文本和固定音频。
-4. Remote ASR/TTS：动态回答先接已有 Minimax TTS，参数固定后再评估其他 provider。
+4. Remote ASR/TTS：ASR 可显式启用 OpenAI 转写 provider；动态回答可显式启用 MiniMax TTS provider，默认用 `speech-2.8-turbo` 输出 16 kHz mono WAV，参数固定后再评估其他 provider。
 5. 可选本地 ASR/TTS：只在 VPS 资源允许时做，不在 ESP32-C3 上做。
 
 ## 8. 验证路线

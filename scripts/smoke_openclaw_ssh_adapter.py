@@ -29,7 +29,8 @@ remote_command = sys.argv[-1]
 if " health " in f" {remote_command} ":
     print(json.dumps({"ok": True, "status": "live"}))
 elif " agent " in f" {remote_command} ":
-    print(json.dumps({"status": "ok", "result": {"payloads": [{"text": "龙虾收到：测试命令"}]}}))
+    text = "语音短答" if "语音输出要求" in remote_command else "龙虾收到：测试命令"
+    print(json.dumps({"status": "ok", "result": {"payloads": [{"text": text}]}}))
 else:
     print("unexpected command", remote_command, file=sys.stderr)
     sys.exit(2)
@@ -64,7 +65,12 @@ else:
                     "XOB_OPENCLAW_ENABLE_COMMANDS": "1",
                 }
             )
-            _run_command_smoke(tmp_path / "bridge-ssh.sqlite3", "openclaw")
+            _run_command_smoke(
+                tmp_path / "bridge-ssh.sqlite3",
+                "openclaw",
+                context={"mode": "voice"},
+                expected_text="语音短答",
+            )
 
             os.environ.clear()
             os.environ.update(old_env)
@@ -83,20 +89,25 @@ else:
     print("smoke_openclaw_ssh_adapter ok")
 
 
-def _run_command_smoke(db: Path, target: str) -> None:
+def _run_command_smoke(
+    db: Path,
+    target: str,
+    context: dict[str, str] | None = None,
+    expected_text: str = "龙虾收到：测试命令",
+) -> None:
     server = build_server("127.0.0.1", 0, db)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
         host, port = server.server_address
         _wait_for_health(host, port)
-        response = _post_json(
-            f"http://{host}:{port}/command",
-            {"target": target, "text": "测试命令"},
-        )
+        payload: dict[str, object] = {"target": target, "text": "测试命令"}
+        if context is not None:
+            payload["context"] = context
+        response = _post_json(f"http://{host}:{port}/command", payload)
         assert response["target"] == target
         assert response["status"] == "done"
-        assert response["text"] == "龙虾收到：测试命令"
+        assert response["text"] == expected_text
         session_id = response["session_id"]
         with sqlite3.connect(db) as conn:
             events = conn.execute(
@@ -121,7 +132,7 @@ def _wait_for_health(host: str, port: int) -> None:
     raise RuntimeError("server did not become healthy")
 
 
-def _post_json(url: str, payload: dict[str, str]) -> dict[str, str]:
+def _post_json(url: str, payload: dict[str, object]) -> dict[str, str]:
     req = Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode(),

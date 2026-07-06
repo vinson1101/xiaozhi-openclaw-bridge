@@ -173,6 +173,9 @@ static bool read_line(const char *label, char *out, size_t out_len) {
 }
 
 static esp_err_t write_config(const char *bridge_url, const char *device_token, const char *default_target, const char *wifi_ssid, const char *wifi_password) {
+    provisioning_config_t existing;
+    load_existing_config(&existing);
+
     nvs_handle_t nvs;
     const char *target = strlen(default_target) > 0 ? default_target : "fake";
     ESP_RETURN_ON_ERROR(nvs_open("xob", NVS_READWRITE, &nvs), TAG, "open xob NVS");
@@ -189,6 +192,12 @@ static esp_err_t write_config(const char *bridge_url, const char *device_token, 
     if (err == ESP_OK) {
         err = nvs_set_str(nvs, "wifi_password", wifi_password);
     }
+    if (err == ESP_OK && strlen(existing.wifi_ssid) > 0 && strcmp(existing.wifi_ssid, wifi_ssid) != 0) {
+        err = nvs_set_str(nvs, "wifi_ssid_prev", existing.wifi_ssid);
+    }
+    if (err == ESP_OK && strlen(existing.wifi_ssid) > 0 && strcmp(existing.wifi_ssid, wifi_ssid) != 0) {
+        err = nvs_set_str(nvs, "wifi_pass_prev", existing.wifi_password);
+    }
     if (err == ESP_OK) {
         err = nvs_commit(nvs);
     }
@@ -204,7 +213,7 @@ static esp_err_t send_setup_page(httpd_req_t *req) {
         "<form method=\"post\" action=\"/save\">"
         "<p><label>Bridge URL<br><input name=\"bridge_url\" maxlength=\"128\" placeholder=\"http://192.168.4.2:8788\"></label></p>"
         "<p><label>Device token<br><input name=\"device_token\" maxlength=\"64\"></label></p>"
-        "<p><label>Default target<br><select name=\"default_target\"><option value=\"fake\">fake</option><option value=\"openclaw\">openclaw</option></select></label></p>"
+        "<p><label>Default target<br><input name=\"default_target\" maxlength=\"15\" placeholder=\"fake / huntmind / openclaw\"></label></p>"
         "<p><label>WiFi SSID<br><input name=\"wifi_ssid\" maxlength=\"32\"></label></p>"
         "<p><label>WiFi password<br><input name=\"wifi_password\" type=\"password\" maxlength=\"64\"></label></p>"
         "<p><button type=\"submit\">Save and reboot</button></p>"

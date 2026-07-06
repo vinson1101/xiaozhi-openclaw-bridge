@@ -4,6 +4,9 @@
 
 本项目把一块小智形态的 ESP32 语音设备，改造成私有的语音终端，用来连接 OpenClaw、Hermas 和 Zebra 支撑的服务端 Agent。
 
+产品参考方向是桌面上的 Agent 硬件入口：可看、可按、可听、可反馈，
+把服务器侧 Agent 能力延伸到桌面，而不是在板端运行完整 Agent。
+
 目标系统不依赖官方小智云服务。必要时可以完整备份后刷入自有固件。
 
 板端负责听、说、显示、按键和少量本地状态；服务端负责 ASR、TTS、路由、Agent 执行、持久记忆、工具调用和审计。
@@ -42,10 +45,10 @@ Agent 后端
 - 通过语音向局域网或 VPS 上的 OpenClaw / Hermas 下达指令。
 - 不通过官方小智服务。
 - 支持自定义屏幕 UI，重点参考 M5Stack Avatar / StackChan 那种有生命感的动态眼睛。
-- 语音人格名使用“小元”；中文触发短语优先 `你好，小元`，备选 `小元小元`。
+- 语音人格名使用“小元”；MVP 暂时保留板上默认 `你好小智` 唤醒词，等拿到 VB6824 语音包授权码后再切到 `你好，小元`。
 - 支持自定义提示音、唤醒音、错误音、固定语音包和服务端选择的 TTS 音色。
 - 固定语音包用于唤醒、确认、打断、错误、配置等常用短句，可一次生成后缓存播放。
-- 动态 TTS 只用于 Agent 每次生成的回答。Bridge 侧首选用已有 Minimax TTS 接口做第一版 provider，同时保留可替换 provider；普通生硬 TTS 只能作为临时 fallback。
+- 动态 TTS 只用于 Agent 每次生成的回答。Bridge 侧首选用已有 MiniMax TTS 接口做第一版 provider，通过 `XOB_TTS_PROVIDER=minimax` 和同一把 OpenClaw MiniMax key 显式启用；普通生硬 TTS 只能作为临时 fallback。
 - 本地具备基础上下文和记忆管理。
 - 服务端 Agent 架构可以适当迁移 Zebra 的关键模块。
 - 先适配当前 ESP32-C3 板；如果硬件资源不够，再切 ESP32-S3 + PSRAM。
@@ -86,9 +89,10 @@ Agent 后端
 - WiFi 配网和自动重连。
 - Bridge 地址配置，保存在 NVS。
 - 设备身份和配对 token。
-- HTTP JSON 客户端，先发送 Bridge hello；WebSocket 等音频流阶段再加。
+- 默认后端是 agent route，例如 `fake`、`huntmind`、`openclaw`；它不是 WiFi。
+- HTTP JSON 客户端发送 Bridge hello；WebSocket 负责语音帧。
 - ST7789 屏幕状态 UI。
-- 按键触发录音；未来可把 `你好，小元` 作为中文唤醒/ASR 触发短语。
+- 中键按原小智 toggle 语义进入 `mode:auto` 聆听或请求打断；VB6824 离线命令帧触发同一唤醒流程。当前 MVP 用默认 `你好小智`，后续拿到 `你好，小元` 授权码后通过板端 `:vb-ota <code>` 更新语音包。
 - 音频上传。
 - 自然中文 TTS 或音频播放。
 - 电量、WiFi、错误状态上报。
@@ -221,6 +225,8 @@ Bridge 对后端使用统一请求：
 适配器：
 
 - OpenClaw adapter：优先调用已有 HTTP 入口；没有稳定 HTTP 时用 CLI 包一层。
+- 当前已验证 OpenClaw CLI agent 入口可以直接调用 `huntmind`，并通过
+  `--session-key` 保持会话连续性；飞书和 Telegram 是 channel，不是唯一入口。
 - Hermas adapter：先按同一 contract 预留，等确认真实 API 后实现。
 - Zebra adapter：创建或恢复 Zebra session，把状态流转回 Bridge。
 

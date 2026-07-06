@@ -111,11 +111,18 @@ class OpenClawSshAdapter:
 
     def _agent_turn(self, request: AgentRequest) -> AgentResponse:
         session_key = f"{self.config.session_prefix}:{request.session_id}"
+        message = request.user_text
+        if request.context.get("mode") == "voice":
+            message = (
+                f"{request.user_text}\n\n"
+                "【语音输出要求】请只返回要朗读的中文口语内容：一到两句话，80字以内；"
+                "不要 Markdown、编号、列表、代码块、表情符号或解释格式要求。"
+            )
         args = [
             "agent",
             "--json",
             "--message",
-            request.user_text,
+            message,
             "--session-key",
             session_key,
             "--timeout",

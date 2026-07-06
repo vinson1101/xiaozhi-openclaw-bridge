@@ -49,16 +49,39 @@
 - Xiaoyuan fixed voice prompts exist in `src/xiaozhi_openclaw_bridge/voice.py`.
 - ASR provider boundary exists with a local fake provider.
 - TTS provider boundary exists with cacheable fixed prompts and a local fake WAV provider.
+- MiniMax TTS provider exists as an opt-in dynamic-answer provider using the same MiniMax API key already configured for OpenClaw. The key is not committed; VPS Bridge reads it from `/etc/xob-bridge/minimax.env`.
+- VPS Bridge is now running with `XOB_TTS_PROVIDER=minimax`. A live MiniMax test returned a 29,858-byte `audio/wav` file with a `RIFF` header for the text `小元`.
 - Recognized text can be routed through the existing Bridge command handler.
 - Bridge accepts paired device audio uploads at `/device/audio` and routes fake ASR text through the command handler.
 - Firmware serial `:voice` / `:audio` probe uploads silent PCM to `/device/audio`.
 - Bridge accepts XiaoZhi-compatible WebSocket hello at `/device/ws`.
-- Bridge accepts XiaoZhi-style WebSocket `listen` controls and binary audio frames, then returns `stt` / `tts` text frames.
+- Bridge accepts XiaoZhi-style WebSocket `listen` controls and binary audio frames, then returns `stt` / `tts` text frames plus one or more raw PCM TTS audio frames.
 - Firmware serial `:ws` probe performs the XiaoZhi-compatible WebSocket hello handshake.
-- Firmware serial `:talk` probe sends a XiaoZhi-style listen/audio/stop cycle and waits for `stt` / `tts` text frames.
+- Firmware serial `:talk` probe sends a XiaoZhi-style listen/audio/stop cycle and waits for `stt` / `tts` text frames plus returned TTS audio bytes.
 - Firmware identifies the board microphone input as VB6824 UART on GPIO20/GPIO10 at 2 Mbps.
 - Firmware serial `:vb` validates real VB6824 audio and wake-word frames from the board.
-- Firmware serial `:vb-talk` sends real VB6824 Opus frames over `/device/ws` and receives `stt` / `tts` responses.
+- Firmware serial `:vb-talk` sends real VB6824 Opus frames over `/device/ws` and receives `stt` / `tts` responses plus returned TTS audio bytes.
+- Firmware middle-button short press now mirrors upstream XiaoZhi `ToggleChatState()`: idle starts `listen/start` with `mode:auto`, and another press during an active voice session requests stop/interrupt.
+- Firmware starts a VB6824 wake listener after Bridge hello and maps offline command frames containing `小元` or `小智` to the listening/WebSocket voice path. The flashed board currently reports VB6824 configured wake word `你好小智`; real `你好，小元` wake requires a Xiaoyuan VB6824 voice-pack/wake-word update and rerun validation.
+- Firmware serial `:vb-ota <code>` starts the official VB6824 OTA path for a voice-pack authorization code, using `0x0205` / `0x0105`, `jl_ota_start()`, and `jl_ondata()`.
+- Board-side wake test with macOS Chinese TTS now validates the stock `你好小智` MVP path end to end through the reachable VPS: VB6824 wake command, WebSocket hello/listen/audio/stop, `stt`, returned fake WAV TTS, VB6824 playback write, and `websocket talk probe complete`. User human-speech testing still did not wake the device, so spoken wake reliability remains a tuning/voice-pack issue rather than a VPS connectivity issue.
+- Firmware keeps the fixed 150-frame, about 3-second VB6824 capture only for the `:vb-talk` serial probe. Button and wake paths now use a 3000-frame safety cap plus early stop when VB6824 audio frames go idle.
+- Original XiaoZhi/DOIT VB6824 board source confirms the wake gate is the VB6824 voice chip: board code compares received commands to `vb6824_get_wakeup_word()` and only then calls `WakeWordInvoke("你好小智")`. The ESP32 path can consume a Xiaoyuan command frame, but the voice pack must first make human-spoken `你好，小元` produce that frame.
+- No public `你好小元` VB6824 authorization code has been found. MVP keeps the stock `你好小智` wake phrase so the voice loop can continue; Xiaoyuan remains the product persona and later voice-pack target.
+- Firmware now plays returned WebSocket TTS audio as 16 kHz mono 16-bit PCM, sending queued PCM chunks to VB6824 with `0x2081` frames.
+- Current Bridge code is deployed to the reachable VPS `xob-bridge` service. Board serial `:vb-talk` validates the path through VPS WebSocket, fake ASR, fake backend, binary fake WAV TTS, and VB6824 playback write: `websocket talk probe complete`.
+- Fake TTS now returns a short non-silent 16 kHz mono WAV tone instead of silence. The updated Bridge is deployed to VPS, and a Mac-played `你好小智` wake test validates that the board receives and writes 3200 PCM bytes to VB6824 playback.
+- OpenClaw on the VPS is installed and exposes four agents, including `huntmind`. Root CLI and the Bridge service path can run `openclaw agent --agent huntmind --message ... --session-key ...`; a two-turn smoke test confirms session continuity.
+- The deployed Bridge service maps `target=huntmind` through a restricted local wrapper, so the public device host still exposes only the Bridge, not OpenClaw itself.
+- Firmware serial `:target <agent>` updates only `xob.default_target` and reboots. The AP provisioning page treats `default_target` as a free-form route name, not as a WiFi choice.
+- The flashed board has `default_target=huntmind`. The earlier fake-ASR transport loop was superseded by the Bailian ASR validation below.
+- ASR now has an opt-in OpenAI provider path that wraps HTTP PCM16 as WAV and VB6824 WebSocket Opus frames as Ogg Opus before transcription. It is not enabled on the VPS because `OPENAI_API_KEY` is not configured.
+- ASR now also has an opt-in Alibaba Cloud Bailian/DashScope `fun-asr-flash-2026-06-15` provider path. The user's speech-model quota covers ASR and TTS models, so this is the first real ASR bring-up provider while MiniMax remains the currently deployed dynamic TTS provider.
+- VPS Bridge is running with `XOB_ASR_PROVIDER=bailian_fun_flash`; the API key is stored only in `/etc/xob-bridge/bailian-asr.env`, not in Git.
+- Board serial `:vb-talk` now validates the real chain through VPS: VB6824 Opus frames, Bailian Fun-ASR-Flash transcription, OpenClaw `huntmind`, MiniMax WAV TTS, server-side WAV-to-PCM framing, and VB6824 PCM playback. The latest controlled run transcribed `测试成功。`, called `huntmind`, wrote 126,690 PCM bytes to VB6824, and ended with `websocket talk probe complete`.
+- Bridge strips MiniMax WAV headers and sends raw 16 kHz mono PCM WebSocket audio frames for the current firmware playback path. In voice mode, the OpenClaw adapter asks the agent to generate a short spoken answer at the source instead of hard-truncating long Markdown output.
+- Audio playback follows the original XiaoZhi/DOIT pipeline shape: WebSocket receive enqueues returned audio, while a dedicated playback path feeds VB6824. Do not pace speaker output directly from WebSocket binary frame boundaries.
+- Product target is the original XiaoZhi voice experience: short-press toggle, `mode:auto`, automatic VAD/endpointer, interrupt while speaking/listening, and streamed/low-latency response. Non-streaming transcription remains acceptable only as a bring-up fallback, not the final interaction model.
 - Firmware serial `:status` reports safe Bridge endpoint diagnostics without printing raw secrets.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
 - Deployment units disable the generic `/command` route for public device hosts.
@@ -116,7 +139,7 @@ Tasks:
 - [x] Normalize OpenClaw result into Bridge response.
 - [x] Preserve explicit command enablement instead of auto-executing by default.
 - [x] Add fake fixture test for OpenClaw response parsing.
-- [ ] Validate one live non-destructive `openclaw agent --json` call after operator policy is confirmed.
+- [x] Validate one live non-destructive `openclaw agent --json` call after operator policy is confirmed.
 
 Acceptance:
 
@@ -217,6 +240,8 @@ Tasks:
 - [x] Send configured `default_target` with board-side text commands.
 - [x] Add serial escape from text command mode into AP/serial provisioning.
 - [x] Allow provisioning to update only changed fields while keeping existing WiFi credentials.
+- [x] Add `:target <agent>` so agent route can change without touching WiFi/token.
+- [x] Make AP provisioning accept a free-form `default_target` route such as `huntmind`.
 - [x] Validate one real `/device/hello` against a reachable Bridge.
 
 Acceptance:
@@ -231,17 +256,41 @@ Goal: complete the first real voice command loop.
 
 Tasks:
 
-- [ ] Add press-to-record.
+- [x] Align middle-button behavior with upstream XiaoZhi toggle semantics instead of press-to-record.
 - [x] Upload real microphone frames through the WebSocket probe.
-- [ ] Convert the serial microphone probe into press-to-record.
+- [x] Convert the serial microphone probe into a middle-button voice probe.
+- [x] Keep fixed 3-second capture only for the `:vb-talk` debug probe.
+- [x] Add temporary button/wake auto endpoint based on VB6824 audio-frame idle.
+- [ ] Replace temporary endpoint with real server-side VAD/endpointer after Opus decode/ASR is connected.
 - [x] Add XiaoZhi-compatible WebSocket hello handshake.
 - [x] Add firmware serial probe for the WebSocket hello handshake.
 - [x] Add ASR provider adapter.
 - [x] Route recognized text to backend.
 - [x] Define fixed Xiaoyuan voice-pack prompts for wake, confirm, interrupt, error, and setup states.
-- [ ] Use existing Minimax TTS as the first dynamic-answer provider; avoid stiff generic TTS except as fallback.
+- [x] Add VB6824 offline command listener for Xiaoyuan wake frames.
+- [x] Validate that macOS-played stock `你好小智` wakes the flashed board and completes the VPS voice loop.
+- [ ] Validate that human-spoken `你好小智` wakes the flashed board on the MVP path.
+- [x] Add VB6824 voice-pack OTA serial entry for a Xiaoyuan authorization code.
+- [ ] Later: obtain or generate a VB6824 voice-pack code that recognizes `你好，小元`.
+- [x] Add opt-in MiniMax TTS as the first dynamic-answer provider; avoid stiff generic TTS except as fallback.
+- [x] Configure VPS Bridge service with the existing OpenClaw MiniMax key and validate one live MiniMax WAV response.
 - [x] Add TTS provider adapter with cacheable fixed prompts and replaceable dynamic provider.
-- [ ] Play returned audio on device.
+- [x] Receive returned TTS audio bytes on device.
+- [x] Add first board-side returned WAV/PCM playback path through VB6824.
+- [x] Validate returned-audio playback write on the flashed board with fake silent WAV.
+- [x] Replace fake silent WAV with a short non-silent WAV tone and validate board playback write through VPS.
+- [ ] Validate audible returned-audio playback with non-silent TTS.
+- [x] Configure Bridge service to route `target=huntmind` through a restricted OpenClaw CLI wrapper.
+- [x] Switch flashed board `default_target` from `fake` to `huntmind`.
+- [x] Validate board `:vb-talk` through VPS Bridge to OpenClaw `huntmind` and returned WAV playback write.
+- [x] Add opt-in OpenAI ASR provider path for PCM16/WAV and VB6824 Opus-frame input.
+- [x] Add opt-in Alibaba Cloud Bailian Fun-ASR-Flash provider path for the first real ASR bring-up.
+- [x] Configure VPS Bridge with Bailian Fun-ASR-Flash and validate real spoken Chinese from the board.
+- [x] Chunk returned MiniMax WAV into firmware-friendly WebSocket frames and validate VB6824 PCM playback with real agent output.
+- [x] Add VB6824 playback queue so WebSocket receive is decoupled from fixed-cadence UART playback.
+- [x] Add voice-mode OpenClaw prompt shaping so spoken replies are short plain Chinese instead of long Markdown sent to TTS.
+- [ ] Add Opus decode plus VAD/endpointer on the Bridge, matching XiaoZhi auto-stop behavior.
+- [ ] Configure a streaming-capable ASR provider or run the original XiaoZhi server ASR stack, then validate real spoken Chinese from the board.
 - [ ] Display recognized text and final answer summary.
 - [ ] Drive eye states from audio lifecycle: listening, thinking, speaking, error.
 
@@ -296,8 +345,11 @@ Acceptance:
 
 ## Next Task
 
-Continue Phase 7 voice-loop work against the reachable Bridge host. The current
-Mac LAN path remains blocked by WiFi client-to-client reachability, so do not use
-the Mac LAN address as the board Bridge target unless router isolation changes.
+Continue Phase 7 voice-loop work against the reachable Bridge host. The
+transport loop to OpenClaw `huntmind` is proven, but the ASR text is still fake.
+Next priority is real VB6824 Opus decode/transcription, then audible dynamic
+TTS quality. The current Mac LAN path remains blocked by WiFi client-to-client
+reachability, so do not use the Mac LAN address as the board Bridge target
+unless router isolation changes.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

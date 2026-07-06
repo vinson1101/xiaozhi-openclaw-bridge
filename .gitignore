@@ -10,6 +10,7 @@ build/
 dist/
 firmware/**/sdkconfig
 firmware/**/sdkconfig.old
+firmware/**/managed_components/
 *.bin
 *.elf
 *.map

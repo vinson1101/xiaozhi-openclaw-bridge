@@ -7,6 +7,11 @@ audio playback.
 
 - Wake phrase product name: `小元`.
 - Preferred Chinese trigger phrase for future ASR wake handling: `你好，小元`.
+- On the current VB6824 board, firmware can react to `小元` command frames, but
+  the VB6824 voice pack must also recognize that spoken phrase. If the module is
+  still on the default XiaoZhi wake pack, board validation may still require a
+  VB6824/CozyLife voice-pack update through the firmware `:vb-ota <code>`
+  serial entry.
 - Fixed prompts live in `src/xiaozhi_openclaw_bridge/voice.py`.
 - Each prompt has:
   - `prompt_id`

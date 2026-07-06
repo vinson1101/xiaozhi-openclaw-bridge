@@ -60,32 +60,32 @@ XiaoZhi-style session loop:
 - device text frame `{"type":"listen","state":"start","mode":"manual"}`
 - one or more binary audio frames
 - device text frame `{"type":"listen","state":"stop"}`
-- server text frames: `stt`, `tts/start`, `tts/sentence_start`, `tts/stop`
+- server frames: `stt`, `tts/start`, `tts/sentence_start`, one or more
+  binary raw PCM TTS audio frames, `tts/stop`
 
-This is still a protocol slice. The binary frames are passed to the existing
-local fake ASR provider as bytes; real Opus decode, streaming ASR, and outbound
-TTS audio are later work.
+This began as a protocol slice. The current board path now sends VB6824 Opus
+frames to the configured ASR provider and plays returned 16 kHz mono PCM on
+VB6824. Real streaming ASR/VAD is still later work.
 
 Device token handling follows the existing pairing rule. The raw token is not
 stored in SQLite.
 
 ## Boundary
 
-This phase does not implement real Opus decode or outbound TTS audio yet. It
-only proves the server-side XiaoZhi WebSocket control/audio frame shape. HTTP
-`/device/audio` remains a diagnostic probe, not the final voice protocol.
+HTTP `/device/audio` remains a diagnostic probe, not the final voice protocol.
 
 Firmware exposes a serial `:ws` probe for the same handshake. It supports the
 current plain `http://` Bridge URL path only; `wss://` is deferred until the
 firmware has a TLS WebSocket client path.
 
 Firmware also exposes `:talk`, which sends `listen/start`, one small binary
-test frame, and `listen/stop`, then waits for `stt` and `tts` text frames. It is
-a protocol probe, not real microphone capture.
+test frame, and `listen/stop`, then waits for `stt`, `tts` text frames, and a
+binary TTS audio frame. It is a protocol probe, not real microphone capture or
+speaker playback.
 
 Firmware also exposes `:vb-talk` after Phase 7F. It uses the same WebSocket
 control flow, but sends real VB6824 Opus microphone frames instead of the static
-test frame.
+test frame, and verifies that returned TTS audio bytes arrive on device.
 
 Firmware also exposes `:status` as a safe diagnostic command. It reports only
 whether config values exist, the HTTP port, and a non-secret host hash. It does

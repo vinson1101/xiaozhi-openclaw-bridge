@@ -4,6 +4,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping
@@ -13,8 +14,10 @@ from uuid import uuid4
 from xiaozhi_openclaw_bridge.adapters import AgentRequest, adapter_for
 from xiaozhi_openclaw_bridge.asr import AsrRequest, asr_provider_for
 from xiaozhi_openclaw_bridge.store import EventStore
+from xiaozhi_openclaw_bridge.tts import TtsRequest, tts_provider_for
 
 MAX_DEVICE_AUDIO_BYTES = 2 * 1024 * 1024
+WEBSOCKET_TURN_TIMEOUT_SECONDS = 180
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
@@ -169,7 +172,13 @@ class BridgeApplication:
 
         try:
             transcript = asr_provider_for().transcribe(
-                AsrRequest(audio=body, sample_rate=sample_rate, channels=channels, language=language)
+                AsrRequest(
+                    audio=body,
+                    sample_rate=sample_rate,
+                    channels=channels,
+                    language=language,
+                    audio_format="pcm16",
+                )
             )
         except ValueError as exc:
             return 400, {"error": str(exc)}
@@ -321,6 +330,8 @@ class BridgeApplication:
         headers: Mapping[str, str],
         session_id: str,
         target: str = "fake",
+        audio_frames: tuple[bytes, ...] = (),
+        frame_duration_ms: int = 20,
     ) -> tuple[int, list[dict[str, Any]]]:
         device_id = str(headers.get("device-id") or "").strip()
         target = target.strip() or "fake"
@@ -333,7 +344,16 @@ class BridgeApplication:
 
         try:
             transcript = asr_provider_for().transcribe(
-                AsrRequest(audio=audio, sample_rate=16000, channels=1, language="zh")
+                AsrRequest(
+                    audio=audio,
+                    sample_rate=16000,
+                    channels=1,
+                    language="zh",
+                    hints=("中文语音", "唤醒词可能是你好小智或你好小元"),
+                    audio_format="opus_frames",
+                    frame_duration_ms=frame_duration_ms,
+                    audio_frames=audio_frames,
+                )
             )
         except ValueError as exc:
             return 400, [{"session_id": session_id, "type": "error", "message": str(exc)}]
@@ -348,12 +368,22 @@ class BridgeApplication:
                 "asr_summary": transcript.summary,
             },
         )
+        print(
+            "asr websocket "
+            f"session={session_id} device={device_id} bytes={len(audio)} frames={len(audio_frames)} "
+            f"status={transcript.status} summary={transcript.summary} "
+            f"text={_short_log_text(transcript.text)}",
+            flush=True,
+        )
         messages: list[dict[str, Any]] = [
             {"session_id": session_id, "type": "stt", "text": transcript.text}
         ]
         if transcript.status != "done" or not transcript.text.strip():
             self.store.set_session_status(session_id, "error")
-            messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
+            messages.extend(_tts_messages(session_id, "我没听清。"))
+            return 200, messages
+        if _is_wake_only_transcript(transcript.text):
+            messages.extend(_tts_messages(session_id, "我在。"))
             return 200, messages
 
         status, result = self._run_command(
@@ -372,7 +402,7 @@ class BridgeApplication:
             source={"type": "device_ws_audio", "device_id": device_id},
         )
         if status != 200:
-            messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
+            messages.extend(_tts_messages(session_id, "服务处理失败。"))
             return status, messages
 
         state = _device_state(result["status"])
@@ -381,18 +411,8 @@ class BridgeApplication:
             "device.result",
             {"device_id": device_id, "state": state, "input": "websocket_audio"},
         )
-        messages.extend(
-            [
-                {"session_id": session_id, "type": "tts", "state": "start"},
-                {
-                    "session_id": session_id,
-                    "type": "tts",
-                    "state": "sentence_start",
-                    "text": _short_display_text(result["text"]),
-                },
-                {"session_id": session_id, "type": "tts", "state": "stop"},
-            ]
-        )
+        spoken_text = result["text"] if result["status"] == "done" else "服务处理超时，请再试一次。"
+        messages.extend(_tts_messages(session_id, spoken_text))
         return 200, messages
 
     def _run_command(
@@ -503,7 +523,7 @@ def build_server(
             self.close_connection = True
 
             try:
-                self.connection.settimeout(10)
+                self.connection.settimeout(WEBSOCKET_TURN_TIMEOUT_SECONDS)
                 opcode, body = _read_ws_frame(self.rfile)
                 if opcode != 1:
                     _write_ws_json(self.wfile, {"type": "error", "message": "expected text hello"})
@@ -514,6 +534,7 @@ def build_server(
                 if status != 200:
                     return
                 session_id = str(payload["session_id"])
+                frame_duration_ms = _positive_int(str(payload["audio_params"]["frame_duration"]), 20)
                 target = _query_value(urlsplit(self.path).query, "target", "fake") or "fake"
                 audio_chunks: list[bytes] = []
                 audio_bytes = 0
@@ -542,14 +563,47 @@ def build_server(
                         _write_ws_json(self.wfile, control)
                         continue
                     if control.get("type") == "listen" and control.get("state") == "stop":
-                        audio = b"".join(audio_chunks)
+                        audio_frames = tuple(audio_chunks)
+                        audio = b"".join(audio_frames)
                         audio_chunks.clear()
                         audio_bytes = 0
-                        _, messages = app.device_websocket_audio(audio, headers, session_id, target)
+                        _, messages = app.device_websocket_audio(
+                            audio,
+                            headers,
+                            session_id,
+                            target,
+                            audio_frames=audio_frames,
+                            frame_duration_ms=frame_duration_ms,
+                        )
+                        sent_audio_frames = 0
+                        sent_audio_bytes = 0
                         for message in messages:
-                            _write_ws_json(self.wfile, message)
-            except OSError:
-                print("GET /device/ws -> 400", flush=True)
+                            if message.get("type") == "tts_audio":
+                                audio = message["audio"]
+                                sent_audio_frames += 1
+                                sent_audio_bytes += len(audio)
+                                _write_ws_binary(self.wfile, audio)
+                            else:
+                                _write_ws_json(self.wfile, message)
+                                if _tts_streaming_enabled() and message.get("type") == "tts" and message.get("state") == "sentence_start":
+                                    frames, audio_bytes = _write_tts_audio_stream(
+                                        self.wfile,
+                                        session_id,
+                                        str(message.get("text") or ""),
+                                    )
+                                    sent_audio_frames += frames
+                                    sent_audio_bytes += audio_bytes
+                        print(
+                            "GET /device/ws -> 200 "
+                            f"session={session_id} messages={len(messages)} "
+                            f"tts_audio_frames={sent_audio_frames} tts_audio_bytes={sent_audio_bytes}",
+                            flush=True,
+                        )
+                        return
+            except OSError as exc:
+                print(f"GET /device/ws -> 400 ({exc.__class__.__name__}: {exc})", flush=True)
+            except Exception as exc:
+                print(f"GET /device/ws -> 500 ({exc.__class__.__name__}: {exc})", flush=True)
 
     return ThreadingHTTPServer((host, port), Handler)
 
@@ -612,16 +666,165 @@ def _read_ws_frame(stream: Any) -> tuple[int, bytes]:
 
 
 def _write_ws_json(stream: Any, payload: dict[str, Any]) -> None:
-    _write_ws_frame(stream, json.dumps(payload, ensure_ascii=False, sort_keys=True).encode())
+    _write_ws_frame(stream, 1, json.dumps(payload, ensure_ascii=False, sort_keys=True).encode())
 
 
-def _write_ws_frame(stream: Any, payload: bytes) -> None:
+def _write_ws_binary(stream: Any, payload: bytes) -> None:
+    _write_ws_frame(stream, 2, payload)
+
+
+def _tts_messages(session_id: str, text: str) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = [
+        {"session_id": session_id, "type": "tts", "state": "start"},
+        {"session_id": session_id, "type": "tts", "state": "sentence_start", "text": text},
+    ]
+    if _tts_streaming_enabled():
+        messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
+        return messages
+    try:
+        speech = tts_provider_for().synthesize(TtsRequest(text=_short_spoken_text(text), voice="xiaoyuan"))
+    except ValueError as exc:
+        speech = None
+        messages.append({"session_id": session_id, "type": "tts", "state": "error", "message": str(exc)})
+    if speech is not None:
+        print(
+            "tts synth "
+            f"session={session_id} status={speech.status} bytes={len(speech.audio)} "
+            f"content_type={speech.content_type} summary={speech.summary}",
+            flush=True,
+        )
+    if speech is not None and speech.status == "done" and speech.audio:
+        for audio_frame in _tts_audio_frames(speech.audio, speech.content_type):
+            messages.append(
+                {
+                    "session_id": session_id,
+                    "type": "tts_audio",
+                    "audio": audio_frame,
+                    "content_type": speech.content_type,
+                }
+            )
+    messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
+    return messages
+
+
+def _tts_audio_frames(audio: bytes, content_type: str) -> tuple[bytes, ...]:
+    max_bytes = _positive_int(os.environ.get("XOB_WS_TTS_AUDIO_FRAME_BYTES", ""), 8000)
+    if content_type == "audio/pcm":
+        return _split_pcm_frames(audio, max_bytes) or (audio,)
+    if content_type == "audio/wav":
+        return _split_wav_pcm_frames(audio, max_bytes) or (audio,)
+    return (audio,)
+
+
+def _split_pcm_frames(pcm: bytes, max_bytes: int) -> tuple[bytes, ...]:
+    if len(pcm) <= max_bytes:
+        return (pcm,)
+    payload_bytes = max_bytes - (max_bytes % 2)
+    if payload_bytes < 2:
+        return ()
+    return tuple(pcm[offset : offset + payload_bytes] for offset in range(0, len(pcm), payload_bytes))
+
+
+def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[int, int]:
+    frames = 0
+    sent_bytes = 0
+    try:
+        provider = tts_provider_for()
+        stream_audio = getattr(provider, "stream_audio", None)
+        if stream_audio is None:
+            speech = provider.synthesize(TtsRequest(text=_short_spoken_text(text), voice="xiaoyuan"))
+            audio_chunks = _tts_audio_frames(speech.audio, speech.content_type) if speech.status == "done" else ()
+            summary = speech.summary
+        else:
+            audio_chunks = (
+                frame
+                for chunk in stream_audio(TtsRequest(text=_short_spoken_text(text), voice="xiaoyuan"))
+                for frame in _tts_audio_frames(chunk, "audio/pcm")
+            )
+            summary = f"{provider.provider} streaming tts"
+        for audio in audio_chunks:
+            frames += 1
+            sent_bytes += len(audio)
+            _write_ws_binary(stream, audio)
+        print(
+            "tts stream "
+            f"session={session_id} frames={frames} bytes={sent_bytes} summary={summary}",
+            flush=True,
+        )
+    except Exception as exc:
+        _write_ws_json(
+            stream,
+            {
+                "session_id": session_id,
+                "type": "tts",
+                "state": "error",
+                "message": _short_display_text(str(exc)),
+            },
+        )
+        print(f"tts stream session={session_id} error={_short_log_text(str(exc))}", flush=True)
+    return frames, sent_bytes
+
+
+def _tts_streaming_enabled() -> bool:
+    return (os.environ.get("XOB_TTS_STREAMING") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _split_wav_pcm_frames(wav: bytes, max_bytes: int) -> tuple[bytes, ...]:
+    parsed = _parse_wav_pcm16(wav)
+    if parsed is None:
+        return ()
+    _, _, pcm = parsed
+    if len(pcm) <= max_bytes:
+        return (pcm,)
+
+    block_align = 2
+    payload_bytes = max_bytes
+    payload_bytes -= payload_bytes % block_align
+    if payload_bytes < block_align:
+        return ()
+
+    frames: list[bytes] = []
+    for offset in range(0, len(pcm), payload_bytes):
+        frames.append(pcm[offset : offset + payload_bytes])
+    return tuple(frames)
+
+
+def _parse_wav_pcm16(wav: bytes) -> tuple[int, int, bytes] | None:
+    if len(wav) < 12 or wav[:4] != b"RIFF" or wav[8:12] != b"WAVE":
+        return None
+    fmt: bytes | None = None
+    data: bytes | None = None
+    offset = 12
+    while offset + 8 <= len(wav):
+        chunk_id = wav[offset : offset + 4]
+        chunk_size = int.from_bytes(wav[offset + 4 : offset + 8], "little")
+        chunk_start = offset + 8
+        chunk_end = chunk_start + chunk_size
+        if chunk_end > len(wav):
+            return None
+        if chunk_id == b"fmt ":
+            fmt = wav[chunk_start:chunk_end]
+        elif chunk_id == b"data":
+            data = wav[chunk_start:chunk_end]
+        offset = chunk_end + (chunk_size % 2)
+    if fmt is None or data is None or len(fmt) < 16:
+        return None
+    audio_format = int.from_bytes(fmt[0:2], "little")
+    channels = int.from_bytes(fmt[2:4], "little")
+    sample_rate = int.from_bytes(fmt[4:8], "little")
+    bits_per_sample = int.from_bytes(fmt[14:16], "little")
+    if audio_format != 1 or channels != 1 or sample_rate != 16000 or bits_per_sample != 16:
+        return None
+    return sample_rate, channels, data
+
+
+def _write_ws_frame(stream: Any, opcode: int, payload: bytes) -> None:
     if len(payload) < 126:
-        header = bytes([0x81, len(payload)])
+        header = bytes([0x80 | opcode, len(payload)])
     elif len(payload) < 65536:
-        header = bytes([0x81, 126]) + len(payload).to_bytes(2, "big")
+        header = bytes([0x80 | opcode, 126]) + len(payload).to_bytes(2, "big")
     else:
-        header = bytes([0x81, 127]) + len(payload).to_bytes(8, "big")
+        header = bytes([0x80 | opcode, 127]) + len(payload).to_bytes(8, "big")
     stream.write(header + payload)
     stream.flush()
 
@@ -659,6 +862,28 @@ def _short_display_text(text: str) -> str:
     if len(single_line) <= 80:
         return single_line
     return single_line[:77] + "..."
+
+
+def _short_log_text(text: str) -> str:
+    single_line = " ".join(text.split())
+    if not single_line:
+        return "<empty>"
+    return _short_display_text(single_line)
+
+
+def _short_spoken_text(text: str) -> str:
+    single_line = " ".join(text.split())
+    max_chars = _positive_int(os.environ.get("XOB_TTS_SPOKEN_MAX_CHARS", ""), 0)
+    if max_chars <= 0:
+        return single_line
+    if len(single_line) <= max_chars:
+        return single_line
+    return single_line[:max(1, max_chars)].rstrip("，,。.!?！？") + "。"
+
+
+def _is_wake_only_transcript(text: str) -> bool:
+    normalized = "".join(ch for ch in text if ch.isalnum())
+    return normalized in {"你好小智", "你好小元", "小智", "小元"}
 
 
 def main() -> None:
