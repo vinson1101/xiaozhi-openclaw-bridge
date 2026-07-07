@@ -51,14 +51,20 @@ The firmware exposes:
   offline command frames containing `小元` or `小智` into the same listening and
   WebSocket voice path.
 - middle listen button: mirrors upstream XiaoZhi `ToggleChatState()` behavior:
-  short press enters `listen/start` with `mode:auto`; another press during an
-  active voice session requests stop.
+  short press in idle enters `listen/start` with `mode:auto`; listening should
+  end by the auto endpointer, while another short press submits/stops the
+  current listen turn; thinking/speaking short press aborts the current turn and
+  should re-enter listening. The current firmware only approximates this with a
+  bring-up state machine, so second-turn submit and speaking interrupt remain
+  explicit validation targets.
 
 `:vb-talk` keeps `XOB_VB_TALK_PROBE_FRAMES=150`, or about 3 seconds of 20 ms
 VB6824 Opus frames, as a serial probe only. Button and wake paths use
-`XOB_VB_TALK_AUTO_MAX_FRAMES=3000` as a safety cap and stop early when no new
-VB6824 audio frames arrive for the current idle window. This is a temporary
-endpoint until real server-side VAD/ASR is connected.
+`XOB_VB_TALK_AUTO_MAX_FRAMES=6000`, about 120 seconds, only as a no-speech and
+runaway safety cap. The actual endpointer decodes VB6824 Opus input frames,
+waits for enough speech, then stops when the rolling tail window is mostly
+silent for about 1.5 seconds. A second middle-button press while listening
+requests submit, but does not cut the turn before enough speech has arrived.
 
 ## Validation
 
@@ -77,8 +83,9 @@ Validated on the real board:
   -> websocket talk probe complete
 ```
 
-The Bridge still routes those bytes through the current fake ASR provider. Real
-Opus decode or streaming ASR is the next server-side step.
+That early probe used the fake ASR provider and is kept as historical transport
+evidence. Current voice-loop validation should use the Bailian ASR/TTS VPS path
+with the firmware Opus-frame endpointer.
 
 After moving the wake-triggered voice loop into a separate session task, macOS
 Chinese TTS playback of the stock phrase `你好小智` validates the automatic wake
@@ -142,51 +149,44 @@ For the MVP, do not block the voice loop on a missing Xiaoyuan authorization
 code. Keep the stock `你好小智` VB6824 wake phrase, while keeping Xiaoyuan as the
 product persona and later voice-pack target.
 
-## Playback Probe
+## Current Smooth Playback Route
 
-Returned WebSocket TTS audio is now sent to VB6824 when the binary frame is raw
-16 kHz, mono, 16-bit PCM. The firmware also accepts a simple WAV binary frame
-for compatibility, strips the WAV header, and sends the PCM data section as
-`0x2081` frames using the current in-memory volume value.
+The only current playback route that should be treated as meaningful for
+experience work is:
 
-MiniMax WAV responses may contain extra WAV chunks and may be larger than a
-small-device WebSocket frame, so the Bridge now strips the WAV wrapper and sends
-raw PCM frames to the firmware. That avoids restarting playback at every chunk.
+```text
+Agent spoken text
+  -> Bridge sentence/length segmentation
+  -> TTS provider per segment
+  -> VPS ffmpeg/libopus packetization
+  -> WebSocket binary OPUS packets
+  -> ESP32-C3 OPUS decode to 16 kHz mono PCM
+  -> firmware playback ringbuffer
+  -> VB6824 0x2081 PCM frames at fixed 10 ms cadence
+```
 
-Playback should follow the original XiaoZhi/DOIT shape: incoming server audio is
-not played synchronously from the WebSocket receive loop. XiaoZhi pushes incoming
-audio into a decode/playback queue, and the VB6824 driver writes to a TX
-ringbuffer that a task/timer drains at the fixed audio cadence. The firmware now
-uses a VB6824 playback ringbuffer plus a dedicated playback task, so WebSocket
-receive can keep accepting TTS frames while audio is drained to UART.
+This matches the original XiaoZhi/DOIT playback shape: incoming network audio is
+not played synchronously from the WebSocket receive loop, and WebSocket frame
+timing is never speaker timing. The firmware uses a VB6824 playback ringbuffer
+plus a dedicated playback task, so WebSocket receive can keep accepting TTS
+frames while audio drains to UART. WAV/PCM binary frames remain accepted only as
+a debug fallback, not as the target voice-experience path.
+
+The current stable build pads the beginning of each playback session with two
+10 ms silent VB6824 PCM frames. This is only an onset guard for the first spoken
+syllable; it does not change TTS segmentation, WebSocket framing, or playback
+queue ownership.
 
 Do not make the voice path acceptable by hard-truncating TTS text. For voice
 mode, the Bridge should ask the OpenClaw agent to generate a short, plain spoken
 answer at the source: one or two Chinese sentences, no Markdown, no lists, and
-no emoji. The full long-form agent behavior remains appropriate for text
-channels, but raw long Markdown should not be sent directly to TTS.
+no emoji. If the agent still returns a longer answer, the Bridge chunks it before
+TTS; `XOB_TTS_SPOKEN_MAX_CHARS` is only a runaway safety cap. The full long-form
+agent behavior remains appropriate for text channels, but raw long Markdown
+should not be sent directly to TTS.
 
-Validated against the reachable VPS Bridge after deploying the current server
-code:
-
-```text
-:vb-talk
-  -> websocket hello complete
-  -> vb6824 websocket audio sent frames=150 bytes=6000
-  -> websocket stt received
-  -> vb6824 playback start wav bytes=3244 pcm bytes=3200
-  -> vb6824 playback pcm bytes=3200
-  -> websocket tts audio received bytes=3244
-  -> websocket tts audio played bytes=3200
-  -> websocket talk probe complete
-```
-
-The fake TTS provider now returns a short non-silent 16 kHz mono WAV tone. The
-updated Bridge is deployed to the VPS, and a Mac-played `你好小智` wake test
-confirms the board still receives `3244` WAV bytes and writes `3200` PCM bytes
-to VB6824 playback. Audibility by ear still needs user-side confirmation; if no
-sound is heard, the next check is board volume, speaker/amp routing, or VB6824
-playback command behavior.
+Earlier fake WAV/raw PCM probes are historical bring-up evidence only. Do not
+use them to decide whether the current voice playback route is good.
 
 ## Huntmind Agent Path
 
@@ -241,9 +241,11 @@ Agent turns can take tens of seconds, so the firmware WebSocket receive timeout
 is now 180 seconds instead of the earlier short protocol-probe timeout.
 
 This transport path was first proven with fake ASR, then with Alibaba Cloud
-Bailian/DashScope `fun-asr-flash-2026-06-15` as the first real ASR provider. The
-VPS service is configured with `XOB_ASR_PROVIDER=bailian_fun_flash`, using an
-environment file outside Git.
+Bailian/DashScope as the real ASR path. Fun-ASR-Flash was the first bring-up
+provider; the current VPS service uses
+`XOB_ASR_PROVIDER=bailian_paraformer_realtime` with
+`XOB_BAILIAN_PARA_ASR_MODEL=paraformer-realtime-v2`, using an environment file
+outside Git.
 
 The latest controlled board run validated the real chain:
 
@@ -259,9 +261,56 @@ The latest controlled board run validated the real chain:
   -> websocket talk probe complete
 ```
 
-This is still a bring-up path, not the final XiaoZhi-like path. Fun-ASR-Flash is
-recorded-audio transcription, and the firmware still uses temporary local
-idle/serial probe behavior rather than server-side streaming VAD/endpointer.
+The current user-visible path now follows the XiaoZhi interaction contract:
+`idle -> listening`, listening ends by the Opus-frame endpointer, a listening
+short press submits without truncating speech, and thinking/speaking short press
+aborts and restarts listening. For no-interrupt auto conversation, TTS playback
+completion now re-enters listening on the same WebSocket session. If no speech
+follows, the firmware times out silently and returns idle without submitting an
+empty ASR turn.
+
+2026-07-07 controlled continuous-dialogue validation on the flashed board:
+
+```text
+macOS TTS wake: 你好小智
+turn 1 speech: 你是谁
+  -> websocket vad stop frames=138 speech=31 tail_speech=3 peak=1723
+  -> VPS ASR text=你是谁？
+  -> websocket talk turn complete turn=1
+  -> websocket continuous re-enter listening turn=2
+turn 2 speech: 你能连续听我说话吗
+  -> websocket vad stop frames=209 speech=84 tail_speech=3 peak=2472
+  -> VPS ASR text=嗯。你能连续听我说话吗？
+  -> websocket talk turn complete turn=2
+  -> websocket continuous re-enter listening turn=3
+turn 3 silence:
+  -> websocket listen ended without speech frames=250 peak=0 timeout=1
+  -> websocket continuous listen idle turn=3
+```
+
+Both spoken turns used the same server session id
+`37f4781a-ca98-47d8-a20e-42ac98a690f6`.
+That validation used the earlier 5-second no-speech safety cap; the current
+firmware timeout is aligned to XiaoZhi-scale idle timing at about 120 seconds.
+
+The follow-up human test on the current stable build passed the no-interrupt
+continuous dialogue flow after the LISTENING display recovery fix. The physical
+middle-button submit and speaking-interrupt paths were not included in that
+round and remain explicit validation work.
+
+2026-07-07 log review of failed middle-button/dialogue tests:
+
+```text
+middle button -> button mask=0x02 -> websocket hello/listen/audio/stop
+recent failed turns -> ASR status=error text=<empty> at 150 VB6824 frames
+same service window -> successful turns transcribed spoken Chinese at 164/178 frames
+failed turns still returned short TTS and completed VB6824 playback
+```
+
+The fix is to make button/wake capture end by decoded-speech VAD instead of by
+the old fixed 150-frame submit window. Do not treat this as evidence that the
+middle button GPIO, WebSocket route, HuntMind route, OPUS downlink, or VB6824
+playback path is down.
 
 ## Original XiaoZhi/DOIT Check
 
@@ -278,11 +327,12 @@ received `小元` command frame into the listening path, but it cannot make
 human-spoken `你好，小元` produce that frame until the VB6824 wake/command voice
 pack itself recognizes Xiaoyuan.
 
-The upstream XiaoZhi application layer also treats wake detection as an
-interrupt path: when a wake event arrives while listening or speaking, it aborts
-the current audio flow and restarts listening. This matches the intended
-middle-button behavior, but it still requires either a button event or a real
-VB6824 wake event first.
+The upstream XiaoZhi application layer separates user intent from transport
+timing. `Application::ToggleChatState()` maps idle to listening, listening to
+stop/close, and speaking to abort. Wake detection is also an interrupt path:
+when a wake event arrives while speaking, it aborts the current audio flow and
+returns to listening. The bridge firmware should follow that state contract
+even if the current transport is still per-turn WebSocket.
 
 For smooth TTS output, the key upstream behavior is the audio pipeline, not a
 single delay value. `Application::OnIncomingAudio` pushes server packets to

@@ -47,7 +47,7 @@ The Bridge replies:
   "session_id": "...",
   "audio_params": {
     "format": "opus",
-    "sample_rate": 24000,
+    "sample_rate": 16000,
     "channels": 1,
     "frame_duration": 60
   }

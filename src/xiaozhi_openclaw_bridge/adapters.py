@@ -4,6 +4,7 @@ import json
 import os
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -146,10 +147,12 @@ class OpenClawSshAdapter:
         )
 
     def _run_openclaw(self, args: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+        started_at = time.monotonic()
+        verb = args[0] if args else "unknown"
         if self.config.ssh_target == "local":
             argv = [self.config.cli_bin, *args]
             try:
-                return subprocess.run(
+                result = subprocess.run(
                     argv,
                     text=True,
                     capture_output=True,
@@ -157,12 +160,19 @@ class OpenClawSshAdapter:
                     check=False,
                 )
             except subprocess.TimeoutExpired as exc:
-                return subprocess.CompletedProcess(
+                result = subprocess.CompletedProcess(
                     argv,
                     124,
                     stdout=_coerce_text(exc.stdout),
                     stderr=_coerce_text(exc.stderr) + "\ncommand timed out",
                 )
+            print(
+                "openclaw cli "
+                f"target={self.target_name} mode=local verb={verb} "
+                f"returncode={result.returncode} elapsed_ms={int((time.monotonic() - started_at) * 1000)}",
+                flush=True,
+            )
+            return result
 
         argv = [
             self.config.ssh_bin,
@@ -185,7 +195,7 @@ class OpenClawSshAdapter:
         remote_command = " ".join(shlex.quote(part) for part in [self.config.cli_bin, *args])
         argv.extend([self.config.ssh_target, remote_command])
         try:
-            return subprocess.run(
+            result = subprocess.run(
                 argv,
                 text=True,
                 capture_output=True,
@@ -193,12 +203,19 @@ class OpenClawSshAdapter:
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            return subprocess.CompletedProcess(
+            result = subprocess.CompletedProcess(
                 argv,
                 124,
                 stdout=_coerce_text(exc.stdout),
                 stderr=_coerce_text(exc.stderr) + "\ncommand timed out",
             )
+        print(
+            "openclaw cli "
+            f"target={self.target_name} mode=ssh verb={verb} "
+            f"returncode={result.returncode} elapsed_ms={int((time.monotonic() - started_at) * 1000)}",
+            flush=True,
+        )
+        return result
 
 
 def adapter_for(target: str) -> Any:

@@ -5,6 +5,11 @@ import base64
 import hashlib
 import json
 import os
+import queue
+import re
+import subprocess
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Mapping
@@ -288,7 +293,7 @@ class BridgeApplication:
             "session_id": session_id,
             "audio_params": {
                 "format": "opus",
-                "sample_rate": 24000,
+                "sample_rate": 16000,
                 "channels": 1,
                 "frame_duration": frame_duration,
             },
@@ -342,6 +347,7 @@ class BridgeApplication:
         if len(audio) > MAX_DEVICE_AUDIO_BYTES:
             return 413, [{"session_id": session_id, "type": "error", "message": "audio too large"}]
 
+        asr_started_at = time.monotonic()
         try:
             transcript = asr_provider_for().transcribe(
                 AsrRequest(
@@ -357,6 +363,7 @@ class BridgeApplication:
             )
         except ValueError as exc:
             return 400, [{"session_id": session_id, "type": "error", "message": str(exc)}]
+        asr_elapsed_ms = int((time.monotonic() - asr_started_at) * 1000)
 
         self.store.append_event(
             session_id,
@@ -366,12 +373,13 @@ class BridgeApplication:
                 "bytes": len(audio),
                 "asr_status": transcript.status,
                 "asr_summary": transcript.summary,
+                "asr_elapsed_ms": asr_elapsed_ms,
             },
         )
         print(
             "asr websocket "
             f"session={session_id} device={device_id} bytes={len(audio)} frames={len(audio_frames)} "
-            f"status={transcript.status} summary={transcript.summary} "
+            f"status={transcript.status} elapsed_ms={asr_elapsed_ms} summary={transcript.summary} "
             f"text={_short_log_text(transcript.text)}",
             flush=True,
         )
@@ -439,6 +447,7 @@ class BridgeApplication:
             "command.received",
             {"target": target, "text": text, "source": source or {"type": "http"}},
         )
+        started_at = time.monotonic()
         response = adapter.run(
             AgentRequest(
                 session_id=session_id,
@@ -446,6 +455,14 @@ class BridgeApplication:
                 user_text=text,
                 context=context,
             )
+        )
+        elapsed_ms = int((time.monotonic() - started_at) * 1000)
+        source_type = str((source or {"type": "http"}).get("type") or "http")
+        print(
+            "agent bridge "
+            f"session={session_id} target={target} source={source_type} "
+            f"status={response.status} elapsed_ms={elapsed_ms}",
+            flush=True,
         )
         self.store.append_event(
             session_id,
@@ -455,6 +472,7 @@ class BridgeApplication:
                 "text": response.text,
                 "summary": response.summary,
                 "artifacts": response.artifacts,
+                "elapsed_ms": elapsed_ms,
             },
         )
         self.store.set_session_status(session_id, response.status)
@@ -538,6 +556,7 @@ def build_server(
                 target = _query_value(urlsplit(self.path).query, "target", "fake") or "fake"
                 audio_chunks: list[bytes] = []
                 audio_bytes = 0
+                listen_mode = ""
                 while True:
                     opcode, body = _read_ws_frame(self.rfile)
                     if opcode == 8:
@@ -562,19 +581,48 @@ def build_server(
                     if control_status != 200:
                         _write_ws_json(self.wfile, control)
                         continue
+                    if control.get("type") == "listen" and control.get("state") == "start":
+                        listen_mode = str(control.get("mode") or "")
+                        audio_chunks.clear()
+                        audio_bytes = 0
                     if control.get("type") == "listen" and control.get("state") == "stop":
                         audio_frames = tuple(audio_chunks)
                         audio = b"".join(audio_frames)
                         audio_chunks.clear()
                         audio_bytes = 0
-                        _, messages = app.device_websocket_audio(
-                            audio,
-                            headers,
-                            session_id,
-                            target,
-                            audio_frames=audio_frames,
-                            frame_duration_ms=frame_duration_ms,
-                        )
+                        if listen_mode == "tts_debug":
+                            messages = [{"session_id": session_id, "type": "stt", "text": "tts_debug"}]
+                            messages.extend(_tts_messages(session_id, _debug_tts_text()))
+                        elif listen_mode == "ask_debug":
+                            debug_text = _debug_ask_text()
+                            status, result = app._run_command(
+                                {
+                                    "session_id": session_id,
+                                    "target": target,
+                                    "text": debug_text,
+                                    "context": {
+                                        "device_id": str(headers.get("device-id") or ""),
+                                        "mode": "voice",
+                                        "transport": "websocket",
+                                    },
+                                },
+                                source={"type": "device_ws_debug"},
+                            )
+                            messages = [{"session_id": session_id, "type": "stt", "text": debug_text}]
+                            if status == 200:
+                                spoken_text = result["text"] if result["status"] == "done" else "服务处理超时，请再试一次。"
+                                messages.extend(_tts_messages(session_id, spoken_text))
+                            else:
+                                messages.extend(_tts_messages(session_id, "服务处理失败。"))
+                        else:
+                            _, messages = app.device_websocket_audio(
+                                audio,
+                                headers,
+                                session_id,
+                                target,
+                                audio_frames=audio_frames,
+                                frame_duration_ms=frame_duration_ms,
+                            )
                         sent_audio_frames = 0
                         sent_audio_bytes = 0
                         for message in messages:
@@ -599,9 +647,11 @@ def build_server(
                             f"tts_audio_frames={sent_audio_frames} tts_audio_bytes={sent_audio_bytes}",
                             flush=True,
                         )
-                        return
             except OSError as exc:
-                print(f"GET /device/ws -> 400 ({exc.__class__.__name__}: {exc})", flush=True)
+                if str(exc) == "missing websocket header":
+                    print("GET /device/ws -> 200 closed", flush=True)
+                else:
+                    print(f"GET /device/ws -> 400 ({exc.__class__.__name__}: {exc})", flush=True)
             except Exception as exc:
                 print(f"GET /device/ws -> 500 ({exc.__class__.__name__}: {exc})", flush=True)
 
@@ -674,46 +724,128 @@ def _write_ws_binary(stream: Any, payload: bytes) -> None:
 
 
 def _tts_messages(session_id: str, text: str) -> list[dict[str, Any]]:
-    messages: list[dict[str, Any]] = [
-        {"session_id": session_id, "type": "tts", "state": "start"},
-        {"session_id": session_id, "type": "tts", "state": "sentence_start", "text": text},
-    ]
+    spoken_text = _short_spoken_text(text)
+    segments = _tts_text_segments(spoken_text)
+    messages: list[dict[str, Any]] = [{"session_id": session_id, "type": "tts", "state": "start"}]
     if _tts_streaming_enabled():
+        for segment in segments:
+            messages.append({"session_id": session_id, "type": "tts", "state": "sentence_start", "text": segment})
         messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
         return messages
-    try:
-        speech = tts_provider_for().synthesize(TtsRequest(text=_short_spoken_text(text), voice="xiaoyuan"))
-    except ValueError as exc:
-        speech = None
-        messages.append({"session_id": session_id, "type": "tts", "state": "error", "message": str(exc)})
-    if speech is not None:
-        print(
-            "tts synth "
-            f"session={session_id} status={speech.status} bytes={len(speech.audio)} "
-            f"content_type={speech.content_type} summary={speech.summary}",
-            flush=True,
-        )
-    if speech is not None and speech.status == "done" and speech.audio:
-        for audio_frame in _tts_audio_frames(speech.audio, speech.content_type):
-            messages.append(
-                {
-                    "session_id": session_id,
-                    "type": "tts_audio",
-                    "audio": audio_frame,
-                    "content_type": speech.content_type,
-                }
+    for segment in segments:
+        messages.append({"session_id": session_id, "type": "tts", "state": "sentence_start", "text": segment})
+        try:
+            speech = tts_provider_for().synthesize(TtsRequest(text=segment, voice="xiaoyuan"))
+        except ValueError as exc:
+            speech = None
+            messages.append({"session_id": session_id, "type": "tts", "state": "error", "message": str(exc)})
+        if speech is not None:
+            print(
+                "tts synth "
+                f"session={session_id} status={speech.status} bytes={len(speech.audio)} "
+                f"content_type={speech.content_type} summary={speech.summary}",
+                flush=True,
             )
+        if speech is not None and speech.status == "done" and speech.audio:
+            for audio_frame in _tts_audio_frames(speech.audio, speech.content_type):
+                messages.append(
+                    {
+                        "session_id": session_id,
+                        "type": "tts_audio",
+                        "audio": audio_frame,
+                        "content_type": speech.content_type,
+                    }
+                )
     messages.append({"session_id": session_id, "type": "tts", "state": "stop"})
     return messages
 
 
 def _tts_audio_frames(audio: bytes, content_type: str) -> tuple[bytes, ...]:
+    if _tts_audio_codec() == "opus" and content_type in {"audio/pcm", "audio/wav"}:
+        frames = _opus_frames_from_audio(audio, content_type)
+        if frames:
+            return frames
     max_bytes = _positive_int(os.environ.get("XOB_WS_TTS_AUDIO_FRAME_BYTES", ""), 8000)
     if content_type == "audio/pcm":
         return _split_pcm_frames(audio, max_bytes) or (audio,)
     if content_type == "audio/wav":
         return _split_wav_pcm_frames(audio, max_bytes) or (audio,)
     return (audio,)
+
+
+def _tts_audio_codec() -> str:
+    return (os.environ.get("XOB_WS_TTS_AUDIO_CODEC") or "pcm").strip().lower() or "pcm"
+
+
+def _opus_frames_from_audio(audio: bytes, content_type: str) -> tuple[bytes, ...]:
+    if not audio:
+        return ()
+    frame_duration = str(_positive_int(os.environ.get("XOB_WS_TTS_OPUS_FRAME_MS", ""), 60))
+    bitrate = os.environ.get("XOB_WS_TTS_OPUS_BITRATE", "16000").strip() or "16000"
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+    ]
+    if content_type == "audio/pcm":
+        cmd += ["-f", "s16le", "-ar", "16000", "-ac", "1"]
+    cmd += [
+        "-i",
+        "pipe:0",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
+        "-c:a",
+        "libopus",
+        "-application",
+        "voip",
+        "-frame_duration",
+        frame_duration,
+        "-vbr",
+        "off",
+        "-b:a",
+        bitrate,
+        "-f",
+        "ogg",
+        "pipe:1",
+    ]
+    proc = subprocess.run(cmd, input=audio, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if proc.returncode != 0:
+        print(f"tts opus encode failed: {proc.stderr.decode(errors='replace')[:240]}", flush=True)
+        return ()
+    return _opus_packets_from_ogg(proc.stdout)
+
+
+def _opus_packets_from_ogg(ogg: bytes) -> tuple[bytes, ...]:
+    packets: list[bytes] = []
+    pending = bytearray()
+    offset = 0
+    while offset + 27 <= len(ogg):
+        if ogg[offset : offset + 4] != b"OggS":
+            return tuple(packets)
+        segments = ogg[offset + 26]
+        header_end = offset + 27 + segments
+        if header_end > len(ogg):
+            return tuple(packets)
+        lacing = ogg[offset + 27 : header_end]
+        body_len = sum(lacing)
+        body_start = header_end
+        body_end = body_start + body_len
+        if body_end > len(ogg):
+            return tuple(packets)
+        body_pos = body_start
+        for seg_len in lacing:
+            pending.extend(ogg[body_pos : body_pos + seg_len])
+            body_pos += seg_len
+            if seg_len < 255:
+                packet = bytes(pending)
+                pending.clear()
+                if not packet.startswith((b"OpusHead", b"OpusTags")):
+                    packets.append(packet)
+        offset = body_end
+    return tuple(packets)
 
 
 def _split_pcm_frames(pcm: bytes, max_bytes: int) -> tuple[bytes, ...]:
@@ -728,17 +860,23 @@ def _split_pcm_frames(pcm: bytes, max_bytes: int) -> tuple[bytes, ...]:
 def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[int, int]:
     frames = 0
     sent_bytes = 0
+    started_at = time.monotonic()
     try:
         provider = tts_provider_for()
         stream_audio = getattr(provider, "stream_audio", None)
-        if stream_audio is None:
-            speech = provider.synthesize(TtsRequest(text=_short_spoken_text(text), voice="xiaoyuan"))
+        if stream_audio is None or _tts_audio_codec() == "opus":
+            speech = provider.synthesize(TtsRequest(text=text.strip(), voice="xiaoyuan"))
             audio_chunks = _tts_audio_frames(speech.audio, speech.content_type) if speech.status == "done" else ()
+            if (
+                speech.status == "done"
+                and _tts_audio_codec() != "opus"
+                and speech.content_type in {"audio/pcm", "audio/wav"}
+            ):
+                audio_chunks = _stream_pcm_audio_frames(audio_chunks)
             summary = speech.summary
         else:
             audio_chunks = _stream_pcm_audio_frames(
-                chunk
-                for chunk in stream_audio(TtsRequest(text=_short_spoken_text(text), voice="xiaoyuan"))
+                chunk for chunk in stream_audio(TtsRequest(text=text.strip(), voice="xiaoyuan"))
             )
             summary = f"{provider.provider} streaming tts"
         for audio in audio_chunks:
@@ -747,7 +885,8 @@ def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[in
             _write_ws_binary(stream, audio)
         print(
             "tts stream "
-            f"session={session_id} frames={frames} bytes={sent_bytes} summary={summary}",
+            f"session={session_id} frames={frames} bytes={sent_bytes} "
+            f"elapsed_ms={int((time.monotonic() - started_at) * 1000)} summary={summary}",
             flush=True,
         )
     except Exception as exc:
@@ -760,7 +899,12 @@ def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[in
                 "message": _short_display_text(str(exc)),
             },
         )
-        print(f"tts stream session={session_id} error={_short_log_text(str(exc))}", flush=True)
+        print(
+            "tts stream "
+            f"session={session_id} elapsed_ms={int((time.monotonic() - started_at) * 1000)} "
+            f"error={_short_log_text(str(exc))}",
+            flush=True,
+        )
     return frames, sent_bytes
 
 
@@ -768,8 +912,19 @@ def _tts_streaming_enabled() -> bool:
     return (os.environ.get("XOB_TTS_STREAMING") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _debug_tts_text() -> str:
+    return (
+        os.environ.get("XOB_DEBUG_TTS_TEXT", "").strip()
+        or "你好，我是小元。这是一段播放调试语音，用来单独检查音频输出是否连续稳定。现在不走语音识别，也不调用智能体，只测试服务器合成和板端播放。"
+    )
+
+
+def _debug_ask_text() -> str:
+    return os.environ.get("XOB_DEBUG_ASK_TEXT", "").strip() or "你好你是谁"
+
+
 def _stream_pcm_audio_frames(chunks: Any) -> Any:
-    frame_bytes = _positive_int(os.environ.get("XOB_WS_TTS_STREAM_FRAME_BYTES", ""), 640)
+    frame_bytes = _positive_int(os.environ.get("XOB_WS_TTS_STREAM_FRAME_BYTES", ""), 2000)
     frame_bytes -= frame_bytes % 2
     if frame_bytes < 2:
         frame_bytes = 640
@@ -779,17 +934,46 @@ def _stream_pcm_audio_frames(chunks: Any) -> Any:
     bytes_per_second = max(1, sample_rate) * 2
     preroll_bytes = max(frame_bytes, ((bytes_per_second * preroll_ms) // 1000))
     preroll_bytes -= preroll_bytes % 2
+    realtime = (os.environ.get("XOB_WS_TTS_STREAM_REALTIME") or "0").strip().lower() not in {"0", "false", "no", "off"}
+
+    chunk_queue: queue.Queue[bytes | BaseException | None] = queue.Queue(
+        maxsize=_positive_int(os.environ.get("XOB_WS_TTS_STREAM_QUEUE_SIZE", ""), 32)
+    )
+
+    def produce() -> None:
+        try:
+            for chunk in chunks:
+                if chunk:
+                    chunk_queue.put(chunk)
+        except BaseException as exc:
+            chunk_queue.put(exc)
+        finally:
+            chunk_queue.put(None)
+
+    threading.Thread(target=produce, name="xob_tts_stream", daemon=True).start()
 
     pending = bytearray()
     started = False
-    for chunk in chunks:
-        if not chunk:
-            continue
+    stream_started_at = 0.0
+    sent_bytes = 0
+    while True:
+        chunk = chunk_queue.get()
+        if chunk is None:
+            break
+        if isinstance(chunk, BaseException):
+            raise chunk
         pending.extend(chunk)
         if not started and len(pending) < preroll_bytes:
             continue
         started = True
+        if stream_started_at == 0.0:
+            stream_started_at = time.monotonic()
         while len(pending) >= frame_bytes:
+            if realtime and sent_bytes > 0:
+                delay = stream_started_at + (sent_bytes / bytes_per_second) - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+            sent_bytes += frame_bytes
             yield bytes(pending[:frame_bytes])
             del pending[:frame_bytes]
 
@@ -797,8 +981,18 @@ def _stream_pcm_audio_frames(chunks: Any) -> Any:
         if len(pending) % 2 == 1:
             pending.append(0)
         while len(pending) > frame_bytes:
+            if realtime and sent_bytes > 0:
+                delay = stream_started_at + (sent_bytes / bytes_per_second) - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+            sent_bytes += frame_bytes
             yield bytes(pending[:frame_bytes])
             del pending[:frame_bytes]
+        if realtime and sent_bytes > 0:
+            delay = stream_started_at + (sent_bytes / bytes_per_second) - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+        sent_bytes += len(pending)
         yield bytes(pending)
 
 
@@ -912,6 +1106,38 @@ def _short_spoken_text(text: str) -> str:
     if len(single_line) <= max_chars:
         return single_line
     return single_line[:max(1, max_chars)].rstrip("，,。.!?！？") + "。"
+
+
+def _tts_text_segments(text: str) -> tuple[str, ...]:
+    single_line = " ".join(text.split()).strip()
+    if not single_line:
+        return ("我没听清。",)
+    max_chars = _positive_int(os.environ.get("XOB_TTS_SEGMENT_MAX_CHARS", ""), 60)
+    if max_chars <= 0:
+        max_chars = 60
+    parts = re.split(r"([。！？!?；;，,\n])", single_line)
+    segments: list[str] = []
+    current = ""
+    for index in range(0, len(parts), 2):
+        piece = parts[index]
+        punct = parts[index + 1] if index + 1 < len(parts) else ""
+        token = (piece + punct).strip()
+        if not token:
+            continue
+        if current and len(current) + len(token) > max_chars:
+            segments.extend(_split_long_tts_segment(current, max_chars))
+            current = token
+        else:
+            current += token
+    if current:
+        segments.extend(_split_long_tts_segment(current, max_chars))
+    return tuple(segments) or ("我没听清。",)
+
+
+def _split_long_tts_segment(text: str, max_chars: int) -> list[str]:
+    if len(text) <= max_chars:
+        return [text]
+    return [text[offset : offset + max_chars] for offset in range(0, len(text), max_chars)]
 
 
 def _is_wake_only_transcript(text: str) -> bool:

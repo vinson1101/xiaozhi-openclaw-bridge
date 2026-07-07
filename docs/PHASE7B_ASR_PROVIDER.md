@@ -11,6 +11,7 @@ bring-up provider.
 - `FakeAsrProvider`
 - optional `OpenAIAsrProvider`
 - optional `BailianFunAsrFlashProvider`
+- optional `BailianParaformerRealtimeProvider`
 
 The fake provider is only for local wiring checks. It returns
 `XOB_FAKE_ASR_TEXT` when set, otherwise `你好，检查链路`.
@@ -38,11 +39,15 @@ Input handling:
 
 Fake mode does not upload real audio to any external provider. OpenAI mode is
 explicit opt-in through environment variables and should only be enabled after
-cost and privacy expectations are confirmed. Bailian Fun-ASR-Flash is also
-explicit opt-in. It is the first real ASR bring-up provider because the user has
-free Alibaba Cloud speech-model quota, but it is still a non-real-time
-recorded-audio path. The final XiaoZhi-like experience still needs streaming
-ASR plus server-side VAD/endpointer.
+cost and privacy expectations are confirmed. Bailian Fun-ASR-Flash was the first
+real bring-up provider, but it is a non-real-time recorded-audio path.
+
+The current voice-chain provider is `BailianParaformerRealtimeProvider` with
+`paraformer-realtime-v2`. The Bridge still buffers one utterance from the board
+until `listen/stop`, then submits it to Paraformer. That uses the realtime API
+but is not yet a fully live board-to-ASR stream. The final XiaoZhi-like
+experience still needs server-side VAD/endpointer and incremental transcript
+events.
 
 Alibaba Cloud TTS models are also available in the same account and can become a
 second dynamic TTS provider later. The current shortest path keeps the already
@@ -50,8 +55,13 @@ deployed MiniMax TTS while replacing fake ASR first.
 
 ## VPS Bring-Up
 
-The VPS Bridge now runs with `XOB_ASR_PROVIDER=bailian_fun_flash`. The Bailian
-API key is stored only in `/etc/xob-bridge/bailian-asr.env`, not in the repo.
+The VPS Bridge now runs with `XOB_ASR_PROVIDER=bailian_paraformer_realtime` and
+`XOB_BAILIAN_PARA_ASR_MODEL=paraformer-realtime-v2`. The Bailian API key is
+stored only in `/etc/xob-bridge/bailian-asr.env`, not in the repo.
+Pin Paraformer realtime to the DashScope WebSocket endpoint with
+`XOB_BAILIAN_ASR_WS_URL` when `XOB_BAILIAN_BASE_URL` is used for a Bailian
+workspace host; otherwise ASR can be charged or gated under the wrong quota
+context.
 
 Validation:
 

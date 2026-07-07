@@ -44,13 +44,13 @@ def main() -> None:
         try:
             host, port = server.server_address
             _wait_for_port(host, port)
-            payload, messages, audio_bytes = _websocket_session(host, port)
+            payload, turn_messages, audio_bytes = _websocket_session(host, port)
             assert payload["type"] == "hello"
             assert payload["transport"] == "websocket"
             assert payload["session_id"]
             assert payload["audio_params"] == {
                 "format": "opus",
-                "sample_rate": 24000,
+                "sample_rate": 16000,
                 "channels": 1,
                 "frame_duration": 60,
             }
@@ -67,21 +67,26 @@ def main() -> None:
             assert pairing[0].startswith("sha256:")
             assert "ws-token" not in pairing[0]
             assert json.loads(pairing[1]) == ["websocket", "audio_in", "audio_out"]
-            assert [row[0] for row in events] == [
-                "device.ws.hello",
-                "device.ws.control",
-                "device.ws.control",
-                "device.ws.audio",
-                "command.received",
-                "backend.response",
-                "device.result",
+            assert [row[0] for row in events] == ["device.ws.hello"] + [
+                event
+                for _ in range(2)
+                for event in (
+                    "device.ws.control",
+                    "device.ws.control",
+                    "device.ws.audio",
+                    "command.received",
+                    "backend.response",
+                    "device.result",
+                )
             ]
             event = json.loads(events[0][1])
             assert event["transport"] == "websocket"
             assert event["audio_params"]["format"] == "opus"
-            assert [message["type"] for message in messages] == ["stt", "tts", "tts", "tts"]
-            assert messages[0]["text"] == "小元测试"
-            assert [message.get("state") for message in messages[1:]] == ["start", "sentence_start", "stop"]
+            assert len(turn_messages) == 2
+            for messages in turn_messages:
+                assert [message["type"] for message in messages] == ["stt", "tts", "tts", "tts"]
+                assert messages[0]["text"] == "小元测试"
+                assert [message.get("state") for message in messages[1:]] == ["start", "sentence_start", "stop"]
             assert audio_bytes > 0
             old_frame_bytes = os.environ.get("XOB_WS_TTS_AUDIO_FRAME_BYTES")
             old_spoken_max = os.environ.get("XOB_TTS_SPOKEN_MAX_CHARS")
@@ -198,7 +203,7 @@ def _with_junk_chunk(wav: bytes) -> bytes:
     return bytes(patched)
 
 
-def _websocket_session(host: str, port: int) -> tuple[dict[str, object], list[dict[str, object]], int]:
+def _websocket_session(host: str, port: int) -> tuple[dict[str, object], list[list[dict[str, object]]], int]:
     key = base64.b64encode(os.urandom(16)).decode()
     request = (
         "GET /device/ws?target=fake HTTP/1.1\r\n"
@@ -236,23 +241,26 @@ def _websocket_session(host: str, port: int) -> tuple[dict[str, object], list[di
         assert opcode == 1
         hello_payload = json.loads(data.decode())
         session_id = hello_payload["session_id"]
-        sock.sendall(_masked_json_frame({"session_id": session_id, "type": "listen", "state": "start", "mode": "manual"}))
-        sock.sendall(_masked_binary_frame(b"\0" * 320))
-        sock.sendall(_masked_json_frame({"session_id": session_id, "type": "listen", "state": "stop"}))
-        messages = []
+        turn_messages = []
         audio_bytes = 0
-        for _ in range(16):
-            opcode, data = _read_frame(sock)
-            if opcode == 2:
-                audio_bytes += len(data)
-                continue
-            assert opcode == 1
-            message = json.loads(data.decode())
-            messages.append(message)
-            if message.get("type") == "tts" and message.get("state") == "stop":
-                break
+        for _ in range(2):
+            sock.sendall(_masked_json_frame({"session_id": session_id, "type": "listen", "state": "start", "mode": "manual"}))
+            sock.sendall(_masked_binary_frame(b"\0" * 320))
+            sock.sendall(_masked_json_frame({"session_id": session_id, "type": "listen", "state": "stop"}))
+            messages = []
+            for _ in range(16):
+                opcode, data = _read_frame(sock)
+                if opcode == 2:
+                    audio_bytes += len(data)
+                    continue
+                assert opcode == 1
+                message = json.loads(data.decode())
+                messages.append(message)
+                if message.get("type") == "tts" and message.get("state") == "stop":
+                    break
+            turn_messages.append(messages)
         sock.sendall(_masked_frame(8, b""))
-    return hello_payload, messages, audio_bytes
+    return hello_payload, turn_messages, audio_bytes
 
 
 def _read_until(sock: socket.socket, marker: bytes) -> bytes:

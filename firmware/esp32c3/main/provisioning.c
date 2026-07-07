@@ -205,6 +205,64 @@ static esp_err_t write_config(const char *bridge_url, const char *device_token, 
     return err;
 }
 
+static esp_err_t write_wifi_config(const char *wifi_ssid, const char *wifi_password, const char *prev_ssid, const char *prev_password) {
+    if (strlen(wifi_ssid) == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    provisioning_config_t existing;
+    load_existing_config(&existing);
+
+    nvs_handle_t nvs;
+    ESP_RETURN_ON_ERROR(nvs_open("xob", NVS_READWRITE, &nvs), TAG, "open xob NVS");
+    esp_err_t err = nvs_set_str(nvs, "wifi_ssid", wifi_ssid);
+    if (err == ESP_OK) {
+        err = nvs_set_str(nvs, "wifi_password", wifi_password);
+    }
+    if (err == ESP_OK && strlen(prev_ssid) > 0) {
+        err = nvs_set_str(nvs, "wifi_ssid_prev", prev_ssid);
+    } else if (err == ESP_OK && strlen(existing.wifi_ssid) > 0 && strcmp(existing.wifi_ssid, wifi_ssid) != 0) {
+        err = nvs_set_str(nvs, "wifi_ssid_prev", existing.wifi_ssid);
+    }
+    if (err == ESP_OK && strlen(prev_ssid) > 0) {
+        err = nvs_set_str(nvs, "wifi_pass_prev", prev_password);
+    } else if (err == ESP_OK && strlen(existing.wifi_ssid) > 0 && strcmp(existing.wifi_ssid, wifi_ssid) != 0) {
+        err = nvs_set_str(nvs, "wifi_pass_prev", existing.wifi_password);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+    return err;
+}
+
+static bool handle_wifi_command(const char *line) {
+    if (strncmp(line, ":wifi ", strlen(":wifi ")) != 0) {
+        return false;
+    }
+
+    char ssid[34] = "";
+    char password[66] = "";
+    char prev_ssid[34] = "";
+    char prev_password[66] = "";
+    int fields = sscanf(line, ":wifi %33s %65s %33s %65s", ssid, password, prev_ssid, prev_password);
+    if (fields < 2) {
+        ESP_LOGW(TAG, "usage: :wifi <ssid> <password> [prev_ssid] [prev_password]");
+        return true;
+    }
+
+    esp_err_t err = write_wifi_config(ssid, password, prev_ssid, prev_password);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "failed to write wifi config: %s", esp_err_to_name(err));
+        return true;
+    }
+
+    ESP_LOGI(TAG, "wifi config saved; rebooting");
+    vTaskDelay(pdMS_TO_TICKS(500));
+    esp_restart();
+    return true;
+}
+
 static esp_err_t send_setup_page(httpd_req_t *req) {
     static const char page[] =
         "<!doctype html><html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -403,8 +461,15 @@ void xob_run_serial_provisioning(void) {
         puts("Values are stored in NVS namespace 'xob'. device_token and wifi_password may be empty.");
         puts("Press Enter to keep an existing non-empty value.");
 
-        if (!read_line("bridge_url", input.bridge_url, sizeof(input.bridge_url)) ||
-            !read_line("device_token", input.device_token, sizeof(input.device_token)) ||
+        if (!read_line("bridge_url", input.bridge_url, sizeof(input.bridge_url))) {
+            ESP_LOGW(TAG, "serial input ended; retrying");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
+        if (handle_wifi_command(input.bridge_url)) {
+            continue;
+        }
+        if (!read_line("device_token", input.device_token, sizeof(input.device_token)) ||
             !read_line("default_target (empty=keep/fake)", input.default_target, sizeof(input.default_target)) ||
             !read_line("wifi_ssid", input.wifi_ssid, sizeof(input.wifi_ssid)) ||
             !read_line("wifi_password", input.wifi_password, sizeof(input.wifi_password))) {

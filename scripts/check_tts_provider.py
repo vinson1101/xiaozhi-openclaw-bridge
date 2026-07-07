@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import sys
 import base64
+import os
+import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from xiaozhi_openclaw_bridge.server import _opus_frames_from_audio, _tts_audio_frames  # noqa: E402
 from xiaozhi_openclaw_bridge.tts import BailianTtsProvider, MiniMaxTtsProvider, TtsRequest, synthesize_fixed_prompt, tts_provider_for  # noqa: E402
 
 
@@ -18,6 +21,16 @@ def main() -> None:
     assert dynamic.audio.startswith(b"RIFF")
     assert any(dynamic.audio[44:])
     assert dynamic.cache_key == "dynamic/test"
+    if shutil.which("ffmpeg"):
+        opus_frames = _opus_frames_from_audio(dynamic.audio, dynamic.content_type)
+        assert len(opus_frames) >= 1
+        assert not opus_frames[0].startswith((b"OpusHead", b"OpusTags", b"OggS"))
+        os.environ["XOB_WS_TTS_AUDIO_CODEC"] = "opus"
+        try:
+            wire_frames = _tts_audio_frames(dynamic.audio, dynamic.content_type)
+        finally:
+            os.environ.pop("XOB_WS_TTS_AUDIO_CODEC", None)
+        assert wire_frames == opus_frames
 
     fixed = synthesize_fixed_prompt("interrupt", provider)
     assert fixed.status == "done"

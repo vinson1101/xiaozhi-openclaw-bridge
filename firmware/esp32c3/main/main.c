@@ -10,6 +10,7 @@
 #include "esp_check.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
+#include "esp_intr_alloc.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -28,14 +29,23 @@
 #include "lwip/ip_addr.h"
 #include "lwip/netdb.h"
 #include "lwip/sockets.h"
+#include "sdkconfig.h"
 
 #include "eyes.h"
 #include "lcd.h"
 #include "provisioning.h"
 #include "screen.h"
 #include "vb_ota.h"
+#include "xob_opus.h"
 
 static const char *TAG = "xob";
+typedef enum {
+    XOB_VOICE_IDLE = 0,
+    XOB_VOICE_LISTENING,
+    XOB_VOICE_THINKING,
+    XOB_VOICE_SPEAKING,
+} xob_voice_state_t;
+
 static EventGroupHandle_t wifi_events;
 static esp_netif_t *wifi_netif;
 static const int WIFI_CONNECTED_BIT = BIT0;
@@ -48,13 +58,25 @@ static bool buttons_ready;
 static bool button_task_started;
 static bool vb_wake_task_started;
 static SemaphoreHandle_t vb_uart_mutex;
+static QueueHandle_t vb_uart_event_queue;
+static RingbufHandle_t vb6824_input_ring;
+static QueueHandle_t vb6824_event_queue;
+static TaskHandle_t vb6824_uart_task_handle;
 static bool vb6824_uart_ready;
 static volatile bool vb6824_ota_requested;
 static volatile bool vb6824_ota_active;
 static volatile bool vb6824_wake_refresh_requested;
+static volatile bool vb6824_input_enabled;
+static volatile bool vb6824_output_enabled;
 static volatile bool vb6824_audio_capture_active;
+static volatile int64_t vb6824_audio_capture_started_us;
 static volatile bool vb6824_voice_session_active;
 static volatile bool vb6824_voice_stop_requested;
+static volatile bool vb6824_voice_submit_pending;
+static volatile bool vb6824_voice_abort_requested;
+static volatile bool vb6824_voice_restart_requested;
+static volatile xob_voice_state_t vb6824_voice_state = XOB_VOICE_IDLE;
+static volatile int vb6824_active_sock = -1;
 static volatile bool avatar_refresh_paused;
 static RingbufHandle_t vb6824_playback_ring;
 static TaskHandle_t vb6824_playback_task_handle;
@@ -62,10 +84,17 @@ static volatile size_t vb6824_playback_enqueued_bytes;
 static volatile size_t vb6824_playback_played_bytes;
 static volatile esp_err_t vb6824_playback_error = ESP_OK;
 static volatile int64_t vb6824_playback_last_enqueue_us;
+static volatile int64_t vb6824_playback_started_us;
+static volatile int64_t vb6824_playback_send_us;
+static volatile uint32_t vb6824_playback_frame_count;
+static volatile uint32_t vb6824_playback_slow_frames;
 static volatile bool vb6824_playback_started;
+static volatile bool vb6824_playback_session_active;
+static xob_opus_decoder_t *tts_opus_decoder;
+static xob_opus_decoder_t *vb6824_vad_decoder;
 static int64_t vb6824_ota_last_request_us;
 static char vb6824_ota_code[32];
-static int local_volume = 50;
+static int local_volume = 70;
 static char avatar_status_text[24] = "BOOT";
 static char avatar_input_text[160] = "";
 static char avatar_output_text[320] = "";
@@ -81,22 +110,44 @@ static char avatar_output_text[320] = "";
 #define XOB_VB_UART_NUM UART_NUM_1
 #define XOB_VB_UART_BAUD 2000000
 #define XOB_VB_UART_TX_BUFFER_BYTES 4096
+#define XOB_VB_UART_RX_BUFFER_BYTES 4096
+#define XOB_VB_UART_QUEUE_SIZE 16
 #define XOB_VB_TX_GPIO GPIO_NUM_20
 #define XOB_VB_RX_GPIO GPIO_NUM_10
+#define XOB_VB_INPUT_FRAME_BYTES 40
+#define XOB_VB_INPUT_QUEUE_BYTES (XOB_VB_INPUT_FRAME_BYTES * 500)
+#define XOB_VB_EVENT_QUEUE_LENGTH 8
+#define XOB_VB_EVENT_TEXT_BYTES 128
 #define XOB_VB_TALK_PROBE_FRAMES 150
-#define XOB_VB_TALK_AUTO_MAX_FRAMES 3000
+#define XOB_VB_TALK_AUTO_MAX_FRAMES 6000
 #define XOB_VB_AUTO_MIN_FRAMES 15
-#define XOB_VB_AUTO_IDLE_MS 1200
 #define XOB_VB_NO_AUDIO_TIMEOUT_MS 5000
+#define XOB_VB_PENDING_SUBMIT_FRAMES 220
+#define XOB_VB_VAD_SPEECH_LEVEL 260
+#define XOB_VB_VAD_MIN_SPEECH_FRAMES 20
+#define XOB_VB_VAD_END_SILENCE_FRAMES 75
+#define XOB_VB_VAD_END_MAX_SPEECH_FRAMES 3
+#define XOB_VB_VAD_NO_SPEECH_FRAMES 6000
 #define XOB_VB_PLAY_PCM_FRAME_BYTES 320
 #define XOB_VB_PLAY_FRAME_DELAY_MS 10
-#define XOB_VB_PLAY_QUEUE_BYTES (32 * 1024)
+#define XOB_VB_PLAY_QUEUE_BYTES (12 * 1024)
 #define XOB_VB_PLAY_ENQUEUE_TIMEOUT_MS 5000
 #define XOB_VB_PLAY_PREROLL_BYTES 1920
 #define XOB_VB_PLAY_PREROLL_MAX_WAIT_MS 80
+#define XOB_VB_PLAY_START_WHEN_FREE_BELOW_BYTES (8 * 1024)
+#define XOB_VB_PLAY_START_SILENCE_FRAMES 2
+#define XOB_VB_PLAY_TASK_STACK_BYTES 3072
+#define XOB_VB_PLAY_TASK_PRIORITY 9
 #define XOB_WS_RECV_TIMEOUT_MS 90000
 #define XOB_WS_MESSAGE_BUFFER_BYTES 16384
-#define XOB_WS_TTS_MAX_FRAMES 192
+#define XOB_WS_TTS_MAX_FRAMES 2048
+#define XOB_OPUS_SAMPLE_RATE 16000
+#define XOB_OPUS_CHANNELS 1
+#define XOB_OPUS_MAX_FRAME_MS 60
+#define XOB_OPUS_MAX_SAMPLES ((XOB_OPUS_SAMPLE_RATE * XOB_OPUS_MAX_FRAME_MS) / 1000)
+
+static int16_t tts_opus_pcm[XOB_OPUS_MAX_SAMPLES];
+static int16_t vb6824_vad_pcm[XOB_OPUS_MAX_SAMPLES];
 
 typedef struct {
     xob_eyes_frame_t eyes;
@@ -125,6 +176,15 @@ typedef struct {
     char host[96];
     uint16_t port;
 } bridge_endpoint_t;
+
+typedef struct {
+    uint16_t cmd;
+    uint16_t len;
+    uint8_t data[XOB_VB_EVENT_TEXT_BYTES];
+} vb6824_event_msg_t;
+
+static void vb6824_uart_task(void *arg);
+static void vb6824_ota_event(jl_ota_evt_id evt, uint32_t data);
 
 static app_config_t active_config;
 
@@ -770,6 +830,209 @@ static esp_err_t vb6824_send_frame_nonblocking(uint16_t cmd, const uint8_t *data
     return uart_wait_tx_done(XOB_VB_UART_NUM, pdMS_TO_TICKS(timeout_ms));
 }
 
+static esp_err_t ensure_vb6824_input_queue(void) {
+    if (vb6824_input_ring == NULL) {
+        vb6824_input_ring = xRingbufferCreate(XOB_VB_INPUT_QUEUE_BYTES, RINGBUF_TYPE_BYTEBUF);
+        if (vb6824_input_ring == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return ESP_OK;
+}
+
+static esp_err_t ensure_vb6824_event_queue(void) {
+    if (vb6824_event_queue == NULL) {
+        vb6824_event_queue = xQueueCreate(XOB_VB_EVENT_QUEUE_LENGTH, sizeof(vb6824_event_msg_t));
+        if (vb6824_event_queue == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return ESP_OK;
+}
+
+static void vb6824_drain_input_queue(void) {
+    if (vb6824_input_ring == NULL) {
+        return;
+    }
+    while (true) {
+        size_t item_len = 0;
+        uint8_t *item = (uint8_t *)xRingbufferReceive(vb6824_input_ring, &item_len, 0);
+        if (item == NULL) {
+            break;
+        }
+        vRingbufferReturnItem(vb6824_input_ring, item);
+    }
+}
+
+static void vb6824_queue_event(uint16_t cmd, const uint8_t *body, uint16_t body_len) {
+    if (vb6824_event_queue == NULL) {
+        return;
+    }
+    vb6824_event_msg_t event = {
+        .cmd = cmd,
+        .len = body_len < XOB_VB_EVENT_TEXT_BYTES - 1 ? body_len : XOB_VB_EVENT_TEXT_BYTES - 1,
+    };
+    if (event.len > 0 && body != NULL) {
+        memcpy(event.data, body, event.len);
+    }
+    event.data[event.len] = '\0';
+    (void)xQueueSend(vb6824_event_queue, &event, 0);
+}
+
+static void vb6824_queue_input_audio(const uint8_t *body, uint16_t body_len) {
+    if (!vb6824_input_enabled || vb6824_input_ring == NULL || body == NULL || body_len == 0) {
+        return;
+    }
+    while (xRingbufferGetCurFreeSize(vb6824_input_ring) < body_len) {
+        size_t item_len = 0;
+        uint8_t *item = (uint8_t *)xRingbufferReceive(vb6824_input_ring, &item_len, 0);
+        if (item == NULL) {
+            break;
+        }
+        vRingbufferReturnItem(vb6824_input_ring, item);
+    }
+    (void)xRingbufferSend(vb6824_input_ring, body, body_len, 0);
+}
+
+static void vb6824_handle_frame(uint16_t cmd, const uint8_t *body, uint16_t body_len) {
+    switch (cmd) {
+    case 0x2080:
+        vb6824_queue_input_audio(body, body_len);
+        break;
+    case 0x0105:
+        if (vb6824_ota_requested && !vb6824_ota_active) {
+            vb6824_ota_active = true;
+            int ret = jl_ota_start(vb6824_ota_event);
+            ESP_LOGI(TAG, "vb6824 ota start accepted ret=%d", ret);
+        }
+        break;
+    case 0x0180:
+    case 0x0280:
+        vb6824_queue_event(cmd, body, body_len);
+        break;
+    default:
+        break;
+    }
+}
+
+static void vb6824_parse_uart_bytes(uint8_t *pending, size_t *pending_len, const uint8_t *data, size_t len) {
+    if (*pending_len + len > 1024) {
+        *pending_len = 0;
+    }
+    memcpy(pending + *pending_len, data, len);
+    *pending_len += len;
+
+    size_t pos = 0;
+    while (pos + 7 <= *pending_len) {
+        if (pending[pos] != 0x55 || pending[pos + 1] != 0xaa) {
+            pos++;
+            continue;
+        }
+        uint16_t body_len = ((uint16_t)pending[pos + 2] << 8) | pending[pos + 3];
+        if (body_len > 512) {
+            pos++;
+            continue;
+        }
+        size_t frame_len = 7 + body_len;
+        if (pos + frame_len > *pending_len) {
+            break;
+        }
+        if (vb6824_sum8(pending + pos, frame_len - 1) != pending[pos + frame_len - 1]) {
+            pos++;
+            continue;
+        }
+        uint16_t cmd = ((uint16_t)pending[pos + 4] << 8) | pending[pos + 5];
+        vb6824_handle_frame(cmd, pending + pos + 6, body_len);
+        pos += frame_len;
+    }
+    if (pos > 0) {
+        memmove(pending, pending + pos, *pending_len - pos);
+        *pending_len -= pos;
+    }
+}
+
+static void vb6824_uart_task(void *arg) {
+    (void)arg;
+    uart_event_t event;
+    uint8_t buf[512];
+    uint8_t pending[1024];
+    size_t pending_len = 0;
+    while (true) {
+        if (xQueueReceive(vb_uart_event_queue, &event, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (event.type == UART_DATA) {
+            while (true) {
+                int got = uart_read_bytes(XOB_VB_UART_NUM, buf, sizeof(buf), 0);
+                if (got <= 0) {
+                    break;
+                }
+                if (vb6824_ota_active) {
+                    jl_ondata(buf, (uint16_t)got);
+                }
+                vb6824_parse_uart_bytes(pending, &pending_len, buf, (size_t)got);
+            }
+        } else if (event.type == UART_FIFO_OVF || event.type == UART_BUFFER_FULL) {
+            ESP_LOGW(TAG, "vb6824 uart overflow event=%d", event.type);
+            uart_flush_input(XOB_VB_UART_NUM);
+            xQueueReset(vb_uart_event_queue);
+            pending_len = 0;
+        }
+    }
+}
+
+static void vb6824_audio_enable_input(bool enable) {
+    if (enable == vb6824_input_enabled) {
+        return;
+    }
+    if (enable) {
+        vb6824_drain_input_queue();
+    }
+    vb6824_input_enabled = enable;
+    if (!enable) {
+        vb6824_drain_input_queue();
+    }
+}
+
+static esp_err_t vb6824_start_voice_input(void) {
+    bool input_was_enabled = vb6824_input_enabled;
+    vb6824_audio_enable_input(true);
+    if (input_was_enabled) {
+        return ESP_OK;
+    }
+    uint8_t one = 1;
+    if (xSemaphoreTake(vb_uart_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    vb6824_send_frame(0x0207, &one, 1);
+    xSemaphoreGive(vb_uart_mutex);
+    return ESP_OK;
+}
+
+static uint16_t vb6824_audio_read(uint8_t *data, uint16_t size, int timeout_ms) {
+    if (!vb6824_input_enabled || vb6824_input_ring == NULL || data == NULL || size == 0) {
+        return 0;
+    }
+    size_t item_len = 0;
+    uint8_t *item = (uint8_t *)xRingbufferReceive(
+        vb6824_input_ring,
+        &item_len,
+        pdMS_TO_TICKS(timeout_ms)
+    );
+    if (item == NULL) {
+        return 0;
+    }
+    if (item_len > size) {
+        item_len = 0;
+    } else {
+        memcpy(data, item, item_len);
+    }
+    vRingbufferReturnItem(vb6824_input_ring, item);
+    return (uint16_t)item_len;
+}
+
+static esp_err_t ensure_vb6824_playback_queue(void);
+
 static esp_err_t ensure_vb6824_uart(void) {
     if (vb_uart_mutex == NULL) {
         vb_uart_mutex = xSemaphoreCreateMutex();
@@ -777,6 +1040,8 @@ static esp_err_t ensure_vb6824_uart(void) {
             return ESP_ERR_NO_MEM;
         }
     }
+    ESP_RETURN_ON_ERROR(ensure_vb6824_input_queue(), TAG, "vb6824 input queue");
+    ESP_RETURN_ON_ERROR(ensure_vb6824_event_queue(), TAG, "vb6824 event queue");
     if (xSemaphoreTake(vb_uart_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_FAIL;
     }
@@ -793,16 +1058,50 @@ static esp_err_t ensure_vb6824_uart(void) {
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    esp_err_t err = uart_driver_install(XOB_VB_UART_NUM, 4096, XOB_VB_UART_TX_BUFFER_BYTES, 0, NULL, 0);
+    int intr_alloc_flags = 0;
+#if CONFIG_UART_ISR_IN_IRAM
+    intr_alloc_flags = ESP_INTR_FLAG_IRAM;
+#endif
+    esp_err_t err = uart_driver_install(
+        XOB_VB_UART_NUM,
+        XOB_VB_UART_RX_BUFFER_BYTES,
+        XOB_VB_UART_TX_BUFFER_BYTES,
+        XOB_VB_UART_QUEUE_SIZE,
+        &vb_uart_event_queue,
+        intr_alloc_flags
+    );
     if (err == ESP_OK) {
         err = uart_param_config(XOB_VB_UART_NUM, &uart_config);
     }
     if (err == ESP_OK) {
         err = uart_set_pin(XOB_VB_UART_NUM, XOB_VB_TX_GPIO, XOB_VB_RX_GPIO, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     }
+    if (err == ESP_OK && vb6824_uart_task_handle == NULL) {
+        BaseType_t created = xTaskCreate(vb6824_uart_task, "xob_vb_uart", 4096, NULL, 9, &vb6824_uart_task_handle);
+        if (created != pdPASS) {
+            vb6824_uart_task_handle = NULL;
+            err = ESP_ERR_NO_MEM;
+        }
+    }
     if (err == ESP_OK) {
         vb6824_uart_ready = true;
+        uint32_t actual_baud = 0;
+        (void)uart_get_baudrate(XOB_VB_UART_NUM, &actual_baud);
+        ESP_LOGI(TAG, "vb6824 uart ready baud=%lu rxbuf=%d txbuf=%d",
+                 (unsigned long)actual_baud,
+                 XOB_VB_UART_RX_BUFFER_BYTES,
+                 XOB_VB_UART_TX_BUFFER_BYTES);
+        esp_err_t play_err = ensure_vb6824_playback_queue();
+        if (play_err == ESP_OK) {
+            ESP_LOGI(TAG, "vb6824 playback queue ready bytes=%d", XOB_VB_PLAY_QUEUE_BYTES);
+        } else {
+            ESP_LOGW(TAG, "vb6824 playback queue prealloc failed: %s", esp_err_to_name(play_err));
+        }
     } else {
+        if (vb6824_uart_task_handle != NULL) {
+            vTaskDelete(vb6824_uart_task_handle);
+            vb6824_uart_task_handle = NULL;
+        }
         uart_driver_delete(XOB_VB_UART_NUM);
     }
     xSemaphoreGive(vb_uart_mutex);
@@ -1096,107 +1395,165 @@ static esp_err_t websocket_send_masked_frame(int sock, uint8_t opcode, const voi
     return send(sock, masked, len, 0) == (int)len ? ESP_OK : ESP_FAIL;
 }
 
-static esp_err_t websocket_send_vb6824_audio(int sock, int max_frames, bool auto_stop, size_t *sent_bytes) {
+static bool vb6824_vad_is_speech(const uint8_t *payload, uint16_t payload_len, uint32_t *level) {
+    if (level != NULL) {
+        *level = 0;
+    }
+    if (payload == NULL || payload_len == 0) {
+        return false;
+    }
+    if (vb6824_vad_decoder == NULL &&
+        xob_opus_decoder_create(XOB_OPUS_SAMPLE_RATE, XOB_OPUS_CHANNELS, &vb6824_vad_decoder) != ESP_OK) {
+        return false;
+    }
+
+    size_t pcm_samples = 0;
+    if (xob_opus_decode(
+            vb6824_vad_decoder,
+            payload,
+            payload_len,
+            vb6824_vad_pcm,
+            XOB_OPUS_MAX_SAMPLES,
+            &pcm_samples
+        ) != ESP_OK ||
+        pcm_samples == 0) {
+        return false;
+    }
+
+    uint64_t total = 0;
+    for (size_t i = 0; i < pcm_samples; i++) {
+        int32_t sample = vb6824_vad_pcm[i];
+        total += (uint32_t)(sample < 0 ? -sample : sample);
+    }
+    uint32_t mean = (uint32_t)(total / pcm_samples);
+    if (level != NULL) {
+        *level = mean;
+    }
+    return mean >= XOB_VB_VAD_SPEECH_LEVEL;
+}
+
+static esp_err_t websocket_send_vb6824_audio(
+    int sock,
+    int max_frames,
+    bool auto_stop,
+    size_t *sent_bytes,
+    bool *heard_speech
+) {
     *sent_bytes = 0;
+    if (heard_speech != NULL) {
+        *heard_speech = !auto_stop;
+    }
     if (vb6824_ota_requested || vb6824_ota_active) {
         ESP_LOGW(TAG, "vb6824 audio blocked during ota");
         return ESP_ERR_INVALID_STATE;
     }
-    vb6824_audio_capture_active = true;
     esp_err_t err = ensure_vb6824_uart();
     if (err != ESP_OK) {
-        vb6824_audio_capture_active = false;
         return err;
-    }
-    if (xSemaphoreTake(vb_uart_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        vb6824_audio_capture_active = false;
-        return ESP_ERR_TIMEOUT;
     }
 
     ESP_LOGI(TAG, "vb6824 websocket audio start tx=%d rx=%d max_frames=%d auto=%d", XOB_VB_TX_GPIO, XOB_VB_RX_GPIO, max_frames, auto_stop);
-    uart_flush_input(XOB_VB_UART_NUM);
-    uint8_t one = 1;
-    vb6824_send_frame(0x0207, &one, 1);
-
-    uint8_t pending[256];
-    size_t pending_len = 0;
+    err = vb6824_start_voice_input();
+    if (err != ESP_OK) {
+        return err;
+    }
+    vb6824_audio_capture_active = true;
+    vb6824_audio_capture_started_us = esp_timer_get_time();
     int sent_frames = 0;
+    int speech_frames = 0;
+    bool end_window[XOB_VB_VAD_END_SILENCE_FRAMES] = {0};
+    int end_window_index = 0;
+    int end_window_frames = 0;
+    int end_window_speech = 0;
+    uint32_t peak_level = 0;
+    bool no_speech_timeout = false;
     int64_t start_us = esp_timer_get_time();
-    int64_t last_audio_us = start_us;
     int64_t end_us = start_us + ((int64_t)max_frames * 20000) + 1500000;
+    if (vb6824_vad_decoder != NULL) {
+        (void)xob_opus_decoder_reset(vb6824_vad_decoder);
+    }
     while (sent_frames < max_frames && esp_timer_get_time() < end_us) {
         int64_t now_us = esp_timer_get_time();
-        if (vb6824_voice_stop_requested) {
-            ESP_LOGI(TAG, "vb6824 websocket audio stop requested frames=%d", sent_frames);
+        if (vb6824_voice_abort_requested) {
+            err = ESP_ERR_INVALID_STATE;
             break;
         }
-        if (auto_stop &&
-            sent_frames >= XOB_VB_AUTO_MIN_FRAMES &&
-            now_us - last_audio_us >= (int64_t)XOB_VB_AUTO_IDLE_MS * 1000) {
-            ESP_LOGI(TAG, "vb6824 websocket audio auto stop frames=%d", sent_frames);
+        if (vb6824_voice_stop_requested) {
+            ESP_LOGI(TAG, "vb6824 websocket audio stop requested frames=%d", sent_frames);
             break;
         }
         if (sent_frames == 0 && now_us - start_us >= (int64_t)XOB_VB_NO_AUDIO_TIMEOUT_MS * 1000) {
             ESP_LOGW(TAG, "vb6824 websocket audio no frames");
             break;
         }
-        uint8_t buf[256];
-        int got = uart_read_bytes(XOB_VB_UART_NUM, buf, sizeof(buf), pdMS_TO_TICKS(50));
+        uint8_t buf[64];
+        uint16_t got = vb6824_audio_read(buf, sizeof(buf), 50);
         if (got <= 0) {
             continue;
         }
-        if (pending_len + (size_t)got > sizeof(pending)) {
-            pending_len = 0;
-        }
-        memcpy(pending + pending_len, buf, got);
-        pending_len += got;
-
-        size_t pos = 0;
-        while (pos + 7 <= pending_len) {
-            if (pending[pos] != 0x55 || pending[pos + 1] != 0xaa) {
-                pos++;
-                continue;
-            }
-            uint16_t body_len = ((uint16_t)pending[pos + 2] << 8) | pending[pos + 3];
-            size_t frame_len = 7 + body_len;
-            if (pos + frame_len > pending_len) {
-                break;
-            }
-            if (vb6824_sum8(pending + pos, frame_len - 1) != pending[pos + frame_len - 1]) {
-                pos++;
-                continue;
-            }
-            uint16_t cmd = ((uint16_t)pending[pos + 4] << 8) | pending[pos + 5];
-            const uint8_t *body = pending + pos + 6;
-            if (cmd == 0x2080) {
-                if (sent_frames < max_frames) {
-                    err = websocket_send_masked_frame(sock, 2, body, body_len);
-                    if (err != ESP_OK) {
-                        break;
-                    }
-                    *sent_bytes += body_len;
-                    sent_frames++;
-                    last_audio_us = esp_timer_get_time();
-                }
-            } else if (cmd == 0x0280) {
-                ESP_LOGI(TAG, "vb6824 wake word: %.*s", body_len, body);
-            }
-            pos += frame_len;
-            if (sent_frames >= max_frames) {
-                break;
-            }
-        }
+        err = websocket_send_masked_frame(sock, 2, buf, got);
         if (err != ESP_OK) {
             break;
         }
-        if (pos > 0) {
-            memmove(pending, pending + pos, pending_len - pos);
-            pending_len -= pos;
+        *sent_bytes += got;
+        sent_frames++;
+        if (auto_stop) {
+            uint32_t level = 0;
+            bool is_speech = vb6824_vad_is_speech(buf, got, &level);
+            if (is_speech) {
+                speech_frames++;
+                if (level > peak_level) {
+                    peak_level = level;
+                }
+            }
+            if (speech_frames >= XOB_VB_VAD_MIN_SPEECH_FRAMES) {
+                if (end_window_frames >= XOB_VB_VAD_END_SILENCE_FRAMES && end_window[end_window_index]) {
+                    end_window_speech--;
+                }
+                end_window[end_window_index] = is_speech;
+                if (is_speech) {
+                    end_window_speech++;
+                }
+                end_window_index = (end_window_index + 1) % XOB_VB_VAD_END_SILENCE_FRAMES;
+                if (end_window_frames < XOB_VB_VAD_END_SILENCE_FRAMES) {
+                    end_window_frames++;
+                }
+            }
+            if (speech_frames == 0 && sent_frames >= XOB_VB_VAD_NO_SPEECH_FRAMES) {
+                ESP_LOGI(TAG, "vb6824 websocket no speech frames=%d peak=%lu", sent_frames, (unsigned long)peak_level);
+                no_speech_timeout = true;
+                break;
+            }
+            if (sent_frames >= XOB_VB_AUTO_MIN_FRAMES &&
+                speech_frames >= XOB_VB_VAD_MIN_SPEECH_FRAMES &&
+                end_window_frames >= XOB_VB_VAD_END_SILENCE_FRAMES &&
+                end_window_speech <= XOB_VB_VAD_END_MAX_SPEECH_FRAMES) {
+                ESP_LOGI(TAG, "vb6824 websocket vad stop frames=%d speech=%d tail_speech=%d peak=%lu",
+                         sent_frames, speech_frames, end_window_speech, (unsigned long)peak_level);
+                break;
+            }
+        }
+        if (vb6824_voice_submit_pending &&
+            sent_frames >= XOB_VB_PENDING_SUBMIT_FRAMES &&
+            (!auto_stop || speech_frames >= XOB_VB_VAD_MIN_SPEECH_FRAMES)) {
+            ESP_LOGI(TAG, "vb6824 websocket pending submit frames=%d speech=%d peak=%lu",
+                     sent_frames, speech_frames, (unsigned long)peak_level);
+            break;
         }
     }
 
-    xSemaphoreGive(vb_uart_mutex);
     vb6824_audio_capture_active = false;
+    vb6824_audio_capture_started_us = 0;
+    vb6824_voice_submit_pending = false;
+    vb6824_audio_enable_input(false);
+    if (heard_speech != NULL) {
+        *heard_speech = !auto_stop || speech_frames >= XOB_VB_VAD_MIN_SPEECH_FRAMES;
+    }
+    if (err == ESP_OK && auto_stop && speech_frames < XOB_VB_VAD_MIN_SPEECH_FRAMES) {
+        ESP_LOGI(TAG, "vb6824 websocket listen ended without speech frames=%d peak=%lu timeout=%d",
+                 sent_frames, (unsigned long)peak_level, no_speech_timeout);
+        return ESP_ERR_NOT_FOUND;
+    }
     if (err == ESP_OK && sent_frames > 0) {
         ESP_LOGI(TAG, "vb6824 websocket audio sent frames=%d bytes=%u", sent_frames, (unsigned)*sent_bytes);
         return ESP_OK;
@@ -1275,13 +1632,70 @@ static uint32_t read_le32(const uint8_t *data) {
 }
 
 static esp_err_t vb6824_play_pcm(const uint8_t *pcm, size_t pcm_len, size_t *queued_bytes);
+static esp_err_t play_tts_opus_frame(const uint8_t *payload, size_t payload_len, size_t *pcm_bytes, size_t *played_bytes);
 
-static void vb6824_prepare_playback_session(void) {
+static void vb6824_drain_playback_queue(void) {
+    if (vb6824_playback_ring == NULL) {
+        return;
+    }
+    while (true) {
+        size_t item_len = 0;
+        uint8_t *item = (uint8_t *)xRingbufferReceiveUpTo(
+            vb6824_playback_ring,
+            &item_len,
+            0,
+            XOB_VB_PLAY_PCM_FRAME_BYTES
+        );
+        if (item == NULL) {
+            break;
+        }
+        vRingbufferReturnItem(vb6824_playback_ring, item);
+    }
+}
+
+static void vb6824_audio_enable_output(bool enable) {
+    if (enable == vb6824_output_enabled) {
+        return;
+    }
+    vb6824_output_enabled = enable;
+    vb6824_playback_session_active = enable;
+    if (!enable) {
+        vb6824_drain_playback_queue();
+    }
+}
+
+static bool vb6824_audio_write(const uint8_t *data, uint16_t len, int timeout_ms) {
+    if (vb6824_playback_ring == NULL || data == NULL || len == 0) {
+        return false;
+    }
+    if (!vb6824_output_enabled &&
+        xRingbufferGetCurFreeSize(vb6824_playback_ring) < XOB_VB_PLAY_START_WHEN_FREE_BELOW_BYTES) {
+        vb6824_audio_enable_output(true);
+    }
+    return xRingbufferSend(vb6824_playback_ring, data, len, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+}
+
+static void vb6824_reset_playback_buffer(void) {
+    vb6824_audio_enable_output(false);
+    vb6824_drain_playback_queue();
     vb6824_playback_enqueued_bytes = 0;
     vb6824_playback_played_bytes = 0;
     vb6824_playback_last_enqueue_us = 0;
+    vb6824_playback_started_us = 0;
+    vb6824_playback_send_us = 0;
+    vb6824_playback_frame_count = 0;
+    vb6824_playback_slow_frames = 0;
     vb6824_playback_started = false;
     vb6824_playback_error = ESP_OK;
+}
+
+static void vb6824_prepare_playback_session(void) {
+    vb6824_reset_playback_buffer();
+    vb6824_audio_enable_output(true);
+}
+
+static void vb6824_finish_playback_session(void) {
+    vb6824_audio_enable_output(false);
 }
 
 static bool wav_pcm16_16k_mono_data(const uint8_t *wav, size_t len, const uint8_t **pcm, size_t *pcm_len) {
@@ -1310,18 +1724,25 @@ static esp_err_t vb6824_write_pcm_frame(const uint8_t *pcm, size_t pcm_len) {
     if (pcm == NULL || pcm_len == 0 || pcm_len > XOB_VB_PLAY_PCM_FRAME_BYTES) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (xSemaphoreTake(vb_uart_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return ESP_ERR_TIMEOUT;
+    int64_t started_us = esp_timer_get_time();
+    vb6824_send_frame(0x2081, pcm, (uint16_t)pcm_len);
+    int64_t elapsed_us = esp_timer_get_time() - started_us;
+    vb6824_playback_send_us += elapsed_us;
+    vb6824_playback_frame_count++;
+    if (elapsed_us > 5000) {
+        vb6824_playback_slow_frames++;
     }
-    esp_err_t err = vb6824_send_frame_nonblocking(0x2081, pcm, (uint16_t)pcm_len, 100);
-    xSemaphoreGive(vb_uart_mutex);
-    return err;
+    return ESP_OK;
 }
 
 static void vb6824_playback_task(void *arg) {
     (void)arg;
     TickType_t last_time = xTaskGetTickCount();
     while (true) {
+        if (!vb6824_output_enabled) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
         size_t item_len = 0;
         uint8_t *item = (uint8_t *)xRingbufferReceiveUpTo(
             vb6824_playback_ring,
@@ -1332,21 +1753,29 @@ static void vb6824_playback_task(void *arg) {
         if (item == NULL) {
             continue;
         }
+        if (!vb6824_output_enabled) {
+            vRingbufferReturnItem(vb6824_playback_ring, item);
+            vb6824_drain_playback_queue();
+            continue;
+        }
         if (!vb6824_playback_started) {
             while (true) {
+                if (!vb6824_output_enabled) {
+                    break;
+                }
                 size_t buffered_bytes = vb6824_playback_enqueued_bytes - vb6824_playback_played_bytes;
                 int64_t last_enqueue_us = vb6824_playback_last_enqueue_us;
                 int64_t idle_us = last_enqueue_us > 0 ? esp_timer_get_time() - last_enqueue_us : 0;
                 if (buffered_bytes >= XOB_VB_PLAY_PREROLL_BYTES ||
                     (buffered_bytes > 0 && idle_us >= (int64_t)XOB_VB_PLAY_PREROLL_MAX_WAIT_MS * 1000)) {
                     vb6824_playback_started = true;
+                    vb6824_playback_started_us = esp_timer_get_time();
                     break;
                 }
                 vTaskDelay(pdMS_TO_TICKS(10));
             }
         }
-        vb6824_audio_capture_active = true;
-        esp_err_t err = ensure_vb6824_uart();
+        esp_err_t err = vb6824_output_enabled && vb6824_uart_ready ? ESP_OK : ESP_ERR_INVALID_STATE;
         if (err == ESP_OK) {
             TickType_t now = xTaskGetTickCount();
             if ((now - last_time) >= pdMS_TO_TICKS(XOB_VB_PLAY_FRAME_DELAY_MS)) {
@@ -1361,8 +1790,10 @@ static void vb6824_playback_task(void *arg) {
             ESP_LOGW(TAG, "vb6824 playback queue failed err=%s", esp_err_to_name(err));
         }
         vRingbufferReturnItem(vb6824_playback_ring, item);
-        vb6824_audio_capture_active = false;
         vTaskDelayUntil(&last_time, pdMS_TO_TICKS(XOB_VB_PLAY_FRAME_DELAY_MS));
+        if (!vb6824_output_enabled) {
+            vb6824_drain_playback_queue();
+        }
     }
 }
 
@@ -1374,7 +1805,7 @@ static esp_err_t ensure_vb6824_playback_queue(void) {
         }
     }
     if (vb6824_playback_task_handle == NULL) {
-        BaseType_t created = xTaskCreate(vb6824_playback_task, "xob_vb_play", 4096, NULL, 5, &vb6824_playback_task_handle);
+        BaseType_t created = xTaskCreate(vb6824_playback_task, "xob_vb_play", XOB_VB_PLAY_TASK_STACK_BYTES, NULL, XOB_VB_PLAY_TASK_PRIORITY, &vb6824_playback_task_handle);
         if (created != pdPASS) {
             vb6824_playback_task_handle = NULL;
             return ESP_ERR_NO_MEM;
@@ -1386,12 +1817,26 @@ static esp_err_t ensure_vb6824_playback_queue(void) {
 static esp_err_t vb6824_wait_playback(size_t target_bytes, int timeout_ms) {
     int64_t deadline = esp_timer_get_time() + ((int64_t)timeout_ms * 1000);
     while (vb6824_playback_played_bytes < target_bytes && esp_timer_get_time() < deadline) {
+        if (vb6824_voice_abort_requested || !vb6824_output_enabled) {
+            return ESP_ERR_INVALID_STATE;
+        }
         if (vb6824_playback_error != ESP_OK) {
             return vb6824_playback_error;
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
-    return vb6824_playback_played_bytes >= target_bytes ? ESP_OK : ESP_ERR_TIMEOUT;
+    esp_err_t err = vb6824_playback_played_bytes >= target_bytes ? ESP_OK : ESP_ERR_TIMEOUT;
+    int64_t started_us = vb6824_playback_started_us;
+    if (started_us > 0) {
+        ESP_LOGI(TAG, "vb6824 playback elapsed_ms=%lld played=%u target=%u frames=%lu send_ms=%lld slow_frames=%lu",
+                 (long long)((esp_timer_get_time() - started_us) / 1000),
+                 (unsigned)vb6824_playback_played_bytes,
+                 (unsigned)target_bytes,
+                 (unsigned long)vb6824_playback_frame_count,
+                 (long long)(vb6824_playback_send_us / 1000),
+                 (unsigned long)vb6824_playback_slow_frames);
+    }
+    return err;
 }
 
 static esp_err_t play_tts_pcm_frame(
@@ -1416,6 +1861,58 @@ static esp_err_t play_tts_pcm_frame(
     *pcm_bytes += pcm_len;
     *played_bytes += played;
     return ESP_OK;
+}
+
+static esp_err_t play_tts_opus_frame(
+    const uint8_t *payload,
+    size_t payload_len,
+    size_t *pcm_bytes,
+    size_t *played_bytes
+) {
+    if (tts_opus_decoder == NULL) {
+        ESP_RETURN_ON_ERROR(
+            xob_opus_decoder_create(XOB_OPUS_SAMPLE_RATE, XOB_OPUS_CHANNELS, &tts_opus_decoder),
+            TAG,
+            "opus decoder create"
+        );
+    }
+
+    size_t pcm_samples = 0;
+    esp_err_t err = xob_opus_decode(
+        tts_opus_decoder,
+        payload,
+        payload_len,
+        tts_opus_pcm,
+        XOB_OPUS_MAX_SAMPLES,
+        &pcm_samples
+    );
+    if (err != ESP_OK) {
+        return err;
+    }
+    return play_tts_pcm_frame((const uint8_t *)tts_opus_pcm, pcm_samples * sizeof(int16_t), pcm_bytes, played_bytes);
+}
+
+static esp_err_t play_tts_audio_frame(
+    const uint8_t *payload,
+    size_t payload_len,
+    bool prefer_opus,
+    size_t *pcm_bytes,
+    size_t *played_bytes
+) {
+    if (payload_len >= 4 && memcmp(payload, "RIFF", 4) == 0) {
+        return play_tts_pcm_frame(payload, payload_len, pcm_bytes, played_bytes);
+    }
+    if (prefer_opus) {
+        esp_err_t err = play_tts_opus_frame(payload, payload_len, pcm_bytes, played_bytes);
+        if (err == ESP_OK) {
+            return ESP_OK;
+        }
+        if ((payload_len % 2) != 0 || payload_len < 1000) {
+            return err;
+        }
+        ESP_LOGW(TAG, "opus decode failed; falling back to pcm bytes=%u", (unsigned)payload_len);
+    }
+    return play_tts_pcm_frame(payload, payload_len, pcm_bytes, played_bytes);
 }
 
 static esp_err_t vb6824_play_pcm(const uint8_t *pcm, size_t pcm_len, size_t *played_bytes) {
@@ -1444,13 +1941,24 @@ static esp_err_t vb6824_play_pcm(const uint8_t *pcm, size_t pcm_len, size_t *pla
         }
         applied_volume = volume;
     }
+    if (vb6824_playback_enqueued_bytes == 0) {
+        static const uint8_t silence[XOB_VB_PLAY_PCM_FRAME_BYTES] = {0};
+        for (int i = 0; i < XOB_VB_PLAY_START_SILENCE_FRAMES; i++) {
+            if (!vb6824_audio_write(silence, sizeof(silence), XOB_VB_PLAY_ENQUEUE_TIMEOUT_MS)) {
+                ESP_LOGW(TAG, "vb6824 playback start silence queue full");
+                return ESP_ERR_TIMEOUT;
+            }
+            vb6824_playback_enqueued_bytes += sizeof(silence);
+            vb6824_playback_last_enqueue_us = esp_timer_get_time();
+        }
+    }
 
     for (size_t pos = 0; pos < pcm_len; pos += XOB_VB_PLAY_PCM_FRAME_BYTES) {
         size_t chunk = pcm_len - pos;
         if (chunk > XOB_VB_PLAY_PCM_FRAME_BYTES) {
             chunk = XOB_VB_PLAY_PCM_FRAME_BYTES;
         }
-        if (xRingbufferSend(vb6824_playback_ring, pcm + pos, chunk, pdMS_TO_TICKS(XOB_VB_PLAY_ENQUEUE_TIMEOUT_MS)) != pdTRUE) {
+        if (!vb6824_audio_write(pcm + pos, (uint16_t)chunk, XOB_VB_PLAY_ENQUEUE_TIMEOUT_MS)) {
             ESP_LOGW(TAG, "vb6824 playback queue full queued=%u", (unsigned)*played_bytes);
             return ESP_ERR_TIMEOUT;
         }
@@ -1458,7 +1966,7 @@ static esp_err_t vb6824_play_pcm(const uint8_t *pcm, size_t pcm_len, size_t *pla
         vb6824_playback_enqueued_bytes += chunk;
         vb6824_playback_last_enqueue_us = esp_timer_get_time();
     }
-    ESP_LOGI(TAG, "vb6824 playback queued pcm bytes=%u", (unsigned)*played_bytes);
+    ESP_LOGD(TAG, "vb6824 playback queued pcm bytes=%u", (unsigned)*played_bytes);
     return ESP_OK;
 }
 
@@ -1477,12 +1985,13 @@ static esp_err_t play_test_tone(void) {
 
     int old_volume = local_volume;
     local_volume = 100;
-    vb6824_playback_error = ESP_OK;
+    vb6824_prepare_playback_session();
     size_t queued = 0;
     esp_err_t err = vb6824_play_pcm(pcm, pcm_len, &queued);
     if (err == ESP_OK) {
         err = vb6824_wait_playback(vb6824_playback_enqueued_bytes, 30000);
     }
+    vb6824_finish_playback_session();
     local_volume = old_volume;
     free(pcm);
     ESP_LOGI(TAG, "test tone queued=%u err=%s", (unsigned)queued, esp_err_to_name(err));
@@ -1567,8 +2076,15 @@ static esp_err_t probe_xiaozhi_websocket(
     int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (sock < 0) {
         freeaddrinfo(res);
+        ESP_LOGW(TAG, "websocket probe socket create failed");
         return ESP_FAIL;
     }
+    struct timeval ws_timeout = {
+        .tv_sec = 8,
+        .tv_usec = 0,
+    };
+    (void)setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &ws_timeout, sizeof(ws_timeout));
+    (void)setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &ws_timeout, sizeof(ws_timeout));
     esp_err_t err = connect(sock, res->ai_addr, res->ai_addrlen) == 0 ? ESP_OK : ESP_FAIL;
     freeaddrinfo(res);
     if (err != ESP_OK) {
@@ -1608,6 +2124,7 @@ static esp_err_t probe_xiaozhi_websocket(
     );
     if (send(sock, request, strlen(request), 0) != (int)strlen(request)) {
         close(sock);
+        ESP_LOGW(TAG, "websocket probe upgrade send failed");
         return ESP_FAIL;
     }
 
@@ -1637,6 +2154,7 @@ static esp_err_t probe_xiaozhi_websocket(
         ESP_LOGW(TAG, "websocket probe upgrade failed: %s", status_line);
         return ESP_FAIL;
     }
+    vb6824_active_sock = sock;
 
     char hello[192];
     snprintf(
@@ -1648,51 +2166,80 @@ static esp_err_t probe_xiaozhi_websocket(
         use_vb_audio ? 20 : 60
     );
     err = websocket_send_masked_text(sock, hello);
+    bool server_audio_is_opus = false;
     if (err == ESP_OK) {
         char message[384];
         err = recv_websocket_text(sock, message, sizeof(message));
         if (err == ESP_OK &&
             json_contains_string(message, "type", "hello") &&
             json_contains_string(message, "transport", "websocket")) {
+            server_audio_is_opus = json_contains_string(message, "format", "opus");
             ESP_LOGI(TAG, "websocket hello complete");
         } else {
             err = ESP_FAIL;
         }
     }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "websocket hello failed: %s", esp_err_to_name(err));
+    }
     if (err == ESP_OK && send_talk_probe) {
-        char listen_start[96];
-        snprintf(
-            listen_start,
-            sizeof(listen_start),
-            "{\"session_id\":\"\",\"type\":\"listen\",\"state\":\"start\",\"mode\":\"%s\"}",
-            listen_mode
-        );
-        const char listen_stop[] = "{\"session_id\":\"\",\"type\":\"listen\",\"state\":\"stop\"}";
-        err = websocket_send_masked_text(sock, listen_start);
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "websocket listen start sent");
-        }
-        if (err == ESP_OK && use_vb_audio) {
-            size_t sent_bytes = 0;
-            err = websocket_send_vb6824_audio(sock, vb_max_frames, auto_stop, &sent_bytes);
-        } else if (err == ESP_OK) {
-            static const uint8_t audio[160] = {0};
-            err = websocket_send_masked_frame(sock, 2, audio, sizeof(audio));
-        }
-        if (err == ESP_OK) {
-            err = websocket_send_masked_text(sock, listen_stop);
+        bool continuous = use_vb_audio && auto_stop && strcmp(listen_mode, "auto") == 0;
+        int turn = 0;
+        while (err == ESP_OK) {
+            turn++;
+            char listen_start[96];
+            snprintf(
+                listen_start,
+                sizeof(listen_start),
+                "{\"session_id\":\"\",\"type\":\"listen\",\"state\":\"start\",\"mode\":\"%s\"}",
+                listen_mode
+            );
+            const char listen_stop[] = "{\"session_id\":\"\",\"type\":\"listen\",\"state\":\"stop\"}";
+            vb6824_voice_state = XOB_VOICE_LISTENING;
+            set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+            err = websocket_send_masked_text(sock, listen_start);
             if (err == ESP_OK) {
-                ESP_LOGI(TAG, "websocket listen stop sent");
-                set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
+                ESP_LOGI(TAG, "websocket listen start sent turn=%d", turn);
             }
-        }
-        if (err == ESP_OK) {
+            bool heard_speech = !auto_stop;
+            if (err == ESP_OK && use_vb_audio) {
+                size_t sent_bytes = 0;
+                err = websocket_send_vb6824_audio(sock, vb_max_frames, auto_stop, &sent_bytes, &heard_speech);
+            } else if (err == ESP_OK) {
+                static const uint8_t audio[160] = {0};
+                err = websocket_send_masked_frame(sock, 2, audio, sizeof(audio));
+                heard_speech = true;
+            }
+            if (err == ESP_ERR_NOT_FOUND) {
+                ESP_LOGI(TAG, "websocket continuous listen idle turn=%d", turn);
+                err = ESP_OK;
+                break;
+            }
+            if (err == ESP_OK && !heard_speech) {
+                ESP_LOGI(TAG, "websocket listen no speech turn=%d", turn);
+                break;
+            }
+            if (err == ESP_OK) {
+                err = websocket_send_masked_text(sock, listen_stop);
+                if (err == ESP_OK) {
+                    ESP_LOGI(TAG, "websocket listen stop sent turn=%d", turn);
+                    vb6824_voice_state = XOB_VOICE_THINKING;
+                    set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
+                }
+            }
+            if (err != ESP_OK) {
+                break;
+            }
             size_t message_len = XOB_WS_MESSAGE_BUFFER_BYTES;
             char *message = malloc(message_len);
             if (message == NULL) {
                 err = ESP_ERR_NO_MEM;
             } else {
-                err = recv_websocket_text(sock, message, message_len);
+                if (vb6824_voice_abort_requested) {
+                    err = ESP_ERR_INVALID_STATE;
+                } else {
+                    err = recv_websocket_text(sock, message, message_len);
+                }
                 if (err == ESP_OK && json_contains_string(message, "type", "stt")) {
                     char text[160];
                     if (json_extract_string(message, "text", text, sizeof(text))) {
@@ -1711,6 +2258,10 @@ static esp_err_t probe_xiaozhi_websocket(
                     vb6824_prepare_playback_session();
                 }
                 for (int i = 0; err == ESP_OK && i < XOB_WS_TTS_MAX_FRAMES && !saw_tts_stop; i++) {
+                    if (vb6824_voice_abort_requested) {
+                        err = ESP_ERR_INVALID_STATE;
+                        break;
+                    }
                     uint8_t opcode = 0;
                     size_t payload_len = 0;
                     err = recv_websocket_frame(sock, &opcode, message, message_len, &payload_len);
@@ -1725,9 +2276,10 @@ static esp_err_t probe_xiaozhi_websocket(
                             err = ESP_ERR_INVALID_SIZE;
                             break;
                         }
-                        err = play_tts_pcm_frame(
+                        err = play_tts_audio_frame(
                             (const uint8_t *)message,
                             payload_len,
+                            server_audio_is_opus,
                             &tts_pcm_bytes,
                             &played_audio_bytes
                         );
@@ -1753,20 +2305,36 @@ static esp_err_t probe_xiaozhi_websocket(
                 }
                 if (err == ESP_OK) {
                     if (err == ESP_OK && played_audio_bytes > 0) {
+                        vb6824_audio_enable_output(true);
                         err = vb6824_wait_playback(vb6824_playback_enqueued_bytes, XOB_WS_RECV_TIMEOUT_MS);
                     }
                 }
+                vb6824_finish_playback_session();
                 avatar_refresh_paused = false;
                 if (err == ESP_OK) {
-                    set_avatar_dialog("DONE", NULL, NULL);
+                    if (continuous) {
+                        vb6824_voice_state = XOB_VOICE_LISTENING;
+                        set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+                        vTaskDelay(pdMS_TO_TICKS(320));
+                    } else {
+                        set_avatar_dialog("DONE", NULL, NULL);
+                    }
                     ESP_LOGI(TAG, "websocket tts audio received bytes=%u", (unsigned)tts_audio_bytes);
                     ESP_LOGI(TAG, "websocket tts audio buffered pcm bytes=%u", (unsigned)tts_pcm_bytes);
                     ESP_LOGI(TAG, "websocket tts audio played bytes=%u", (unsigned)played_audio_bytes);
+                    ESP_LOGI(TAG, "websocket talk turn complete turn=%d", turn);
                     ESP_LOGI(TAG, "websocket talk probe complete");
                 }
                 free(message);
             }
+            if (!continuous || err != ESP_OK || vb6824_voice_abort_requested) {
+                break;
+            }
+            ESP_LOGI(TAG, "websocket continuous re-enter listening turn=%d", turn + 1);
         }
+    }
+    if (vb6824_active_sock == sock) {
+        vb6824_active_sock = -1;
     }
     close(sock);
     if (err != ESP_OK) {
@@ -1799,9 +2367,18 @@ static void run_vb6824_voice_session(const app_config_t *config, const char *sou
         return;
     }
     ESP_LOGI(TAG, "xiaoyuan wake source=%s", source);
+    vb6824_voice_state = XOB_VOICE_LISTENING;
     set_avatar_dialog("LISTENING", "", "");
     set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, XOB_SCREEN_STATUS_PENDING);
     vb6824_voice_stop_requested = false;
+    vb6824_voice_submit_pending = false;
+    vb6824_voice_abort_requested = false;
+    esp_err_t prelisten_err = vb6824_start_voice_input();
+    if (prelisten_err == ESP_OK) {
+        vb6824_audio_capture_started_us = esp_timer_get_time();
+    } else {
+        ESP_LOGW(TAG, "vb6824 prelisten failed err=%s", esp_err_to_name(prelisten_err));
+    }
     esp_err_t err = probe_xiaozhi_websocket(
         config,
         true,
@@ -1810,9 +2387,19 @@ static void run_vb6824_voice_session(const app_config_t *config, const char *sou
         XOB_VB_TALK_AUTO_MAX_FRAMES,
         true
     );
-    if (err != ESP_OK) {
+    if (!vb6824_audio_capture_active) {
+        vb6824_audio_enable_input(false);
+    }
+    if (vb6824_voice_abort_requested) {
+        vb6824_audio_enable_output(false);
+        vb6824_voice_state = XOB_VOICE_IDLE;
+        set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+    } else if (err != ESP_OK) {
+        ESP_LOGW(TAG, "xiaoyuan voice session failed source=%s err=%s", source, esp_err_to_name(err));
+        vb6824_voice_state = XOB_VOICE_IDLE;
         set_avatar_state(XOB_EYES_ERROR, avatar_wifi_status, XOB_SCREEN_STATUS_ERROR);
     } else {
+        vb6824_voice_state = XOB_VOICE_IDLE;
         vTaskDelay(pdMS_TO_TICKS(1200));
         set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, XOB_SCREEN_STATUS_OK);
     }
@@ -1820,17 +2407,46 @@ static void run_vb6824_voice_session(const app_config_t *config, const char *sou
 
 static void vb6824_voice_session_task(void *arg) {
     vb6824_voice_session_arg_t *session = (vb6824_voice_session_arg_t *)arg;
+    const app_config_t *config = session->config;
+    const char *source = session->source;
     run_vb6824_voice_session(session->config, session->source);
+    bool restart = vb6824_voice_restart_requested;
+    vb6824_voice_restart_requested = false;
     free(session);
     vb6824_voice_session_active = false;
+    if (restart) {
+        (void)dispatch_vb6824_voice_session(config, source);
+    }
     vTaskDelete(NULL);
 }
 
 static esp_err_t dispatch_vb6824_voice_session(const app_config_t *config, const char *source) {
     if (vb6824_voice_session_active) {
-        vb6824_voice_stop_requested = true;
-        set_avatar_dialog("STOP", NULL, NULL);
-        ESP_LOGI(TAG, "xiaoyuan voice session stop requested source=%s", source);
+        xob_voice_state_t state = vb6824_voice_state;
+        if (state == XOB_VOICE_LISTENING) {
+            if (!vb6824_audio_capture_active) {
+                vb6824_voice_submit_pending = true;
+                set_avatar_dialog("SENDING", NULL, NULL);
+                ESP_LOGI(TAG, "xiaoyuan prelisten submit pending source=%s", source);
+                return ESP_ERR_INVALID_STATE;
+            }
+            vb6824_voice_submit_pending = true;
+            set_avatar_dialog("SENDING", NULL, NULL);
+            ESP_LOGI(TAG, "xiaoyuan listen submit requested source=%s", source);
+        } else {
+            vb6824_voice_restart_requested = true;
+            vb6824_voice_abort_requested = true;
+            vb6824_voice_stop_requested = true;
+            vb6824_voice_submit_pending = false;
+            vb6824_audio_enable_input(false);
+            vb6824_audio_enable_output(false);
+            int sock = vb6824_active_sock;
+            if (sock >= 0) {
+                shutdown(sock, SHUT_RDWR);
+            }
+            set_avatar_dialog("LISTENING", NULL, NULL);
+            ESP_LOGI(TAG, "xiaoyuan active session abort+restart requested source=%s state=%d sock=%d", source, state, sock);
+        }
         return ESP_ERR_INVALID_STATE;
     }
     vb6824_voice_session_arg_t *session = calloc(1, sizeof(*session));
@@ -1840,9 +2456,11 @@ static esp_err_t dispatch_vb6824_voice_session(const app_config_t *config, const
     session->config = config;
     session->source = source;
     vb6824_voice_session_active = true;
+    vb6824_voice_state = XOB_VOICE_LISTENING;
     BaseType_t created = xTaskCreate(vb6824_voice_session_task, "xob_vb_session", 12288, session, 4, NULL);
     if (created != pdPASS) {
         vb6824_voice_session_active = false;
+        vb6824_voice_state = XOB_VOICE_IDLE;
         free(session);
         ESP_LOGW(TAG, "xiaoyuan voice session not started source=%s", source);
         return ESP_FAIL;
@@ -1852,8 +2470,6 @@ static esp_err_t dispatch_vb6824_voice_session(const app_config_t *config, const
 
 static void vb6824_wake_task(void *arg) {
     const app_config_t *config = (const app_config_t *)arg;
-    uint8_t pending[512];
-    size_t pending_len = 0;
     bool wake_word_requested = false;
 
     while (true) {
@@ -1881,73 +2497,27 @@ static void vb6824_wake_task(void *arg) {
             wake_word_requested = true;
             vb6824_wake_refresh_requested = false;
         }
-        if (vb6824_voice_session_active || vb6824_audio_capture_active || avatar_refresh_paused) {
-            vTaskDelay(pdMS_TO_TICKS(20));
+        vb6824_event_msg_t event;
+        if (xQueueReceive(vb6824_event_queue, &event, pdMS_TO_TICKS(100)) != pdTRUE) {
             continue;
         }
-
-        uint8_t buf[128];
-        int got = 0;
-        if (xSemaphoreTake(vb_uart_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-            got = uart_read_bytes(XOB_VB_UART_NUM, buf, sizeof(buf), pdMS_TO_TICKS(100));
-            xSemaphoreGive(vb_uart_mutex);
-        }
-        if (got <= 0) {
-            vTaskDelay(pdMS_TO_TICKS(20));
+        if (event.cmd == 0x0280) {
+            ESP_LOGI(TAG, "vb6824 configured wake word len=%u text=%.*s", event.len, event.len, event.data);
             continue;
         }
-        if (vb6824_ota_active) {
-            jl_ondata(buf, (uint16_t)got);
+        if (event.cmd != 0x0180 || vb6824_ota_requested || vb6824_ota_active) {
+            continue;
         }
-        if (pending_len + (size_t)got > sizeof(pending)) {
-            pending_len = 0;
-        }
-        memcpy(pending + pending_len, buf, got);
-        pending_len += got;
-
-        size_t pos = 0;
-        bool wake_detected = false;
-        while (pos + 7 <= pending_len) {
-            if (pending[pos] != 0x55 || pending[pos + 1] != 0xaa) {
-                pos++;
-                continue;
-            }
-            uint16_t body_len = ((uint16_t)pending[pos + 2] << 8) | pending[pos + 3];
-            size_t frame_len = 7 + body_len;
-            if (pos + frame_len > pending_len) {
-                break;
-            }
-            if (vb6824_sum8(pending + pos, frame_len - 1) != pending[pos + frame_len - 1]) {
-                pos++;
-                continue;
-            }
-            uint16_t cmd = ((uint16_t)pending[pos + 4] << 8) | pending[pos + 5];
-            const uint8_t *body = pending + pos + 6;
-            if (cmd == 0x0105 && vb6824_ota_requested && !vb6824_ota_active) {
-                vb6824_ota_active = true;
-                int ret = jl_ota_start(vb6824_ota_event);
-                ESP_LOGI(TAG, "vb6824 ota start accepted ret=%d", ret);
-                pending_len = 0;
-                break;
-            } else if (cmd == 0x0180 && !vb6824_ota_requested && !vb6824_ota_active) {
-                ESP_LOGI(TAG, "vb6824 voice command len=%u text=%.*s", body_len, body_len, body);
-                if (vb6824_is_wake_command(body, body_len)) {
-                    wake_detected = true;
-                    pending_len = 0;
-                    break;
-                }
-            } else if (cmd == 0x0280) {
-                ESP_LOGI(TAG, "vb6824 configured wake word len=%u text=%.*s", body_len, body_len, body);
-            }
-            pos += frame_len;
-        }
-        if (wake_detected) {
+        ESP_LOGI(TAG, "vb6824 voice command len=%u text=%.*s", event.len, event.len, event.data);
+        if (vb6824_is_wake_command(event.data, event.len)) {
             dispatch_vb6824_voice_session(config, "vb6824");
             continue;
         }
-        if (pos > 0) {
-            memmove(pending, pending + pos, pending_len - pos);
-            pending_len -= pos;
+        if (vb6824_voice_session_active ||
+            vb6824_audio_capture_active ||
+            vb6824_playback_session_active ||
+            avatar_refresh_paused) {
+            continue;
         }
     }
 }
@@ -2119,6 +2689,38 @@ static void serial_command_task(void *arg) {
                 len = 0;
                 continue;
             }
+            if (strcmp(line, ":tts") == 0) {
+                set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
+                vb6824_voice_stop_requested = false;
+                err = probe_xiaozhi_websocket(config, true, false, "tts_debug", XOB_VB_TALK_PROBE_FRAMES, false);
+                set_avatar_state(
+                    err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
+                    avatar_wifi_status,
+                    err == ESP_OK ? XOB_SCREEN_STATUS_OK : XOB_SCREEN_STATUS_ERROR
+                );
+                if (err == ESP_OK) {
+                    vTaskDelay(pdMS_TO_TICKS(1200));
+                    set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+                }
+                len = 0;
+                continue;
+            }
+            if (strcmp(line, ":ask") == 0) {
+                set_avatar_state(XOB_EYES_THINKING, avatar_wifi_status, avatar_bridge_status);
+                vb6824_voice_stop_requested = false;
+                err = probe_xiaozhi_websocket(config, true, false, "ask_debug", XOB_VB_TALK_PROBE_FRAMES, false);
+                set_avatar_state(
+                    err == ESP_OK ? XOB_EYES_SPEAKING : XOB_EYES_ERROR,
+                    avatar_wifi_status,
+                    err == ESP_OK ? XOB_SCREEN_STATUS_OK : XOB_SCREEN_STATUS_ERROR
+                );
+                if (err == ESP_OK) {
+                    vTaskDelay(pdMS_TO_TICKS(1200));
+                    set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+                }
+                len = 0;
+                continue;
+            }
             if (strcmp(line, ":vb-talk") == 0) {
                 set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
                 vb6824_voice_stop_requested = false;
@@ -2156,7 +2758,7 @@ static void serial_command_task(void *arg) {
 }
 
 static void start_serial_command_task(const app_config_t *config) {
-    BaseType_t created = xTaskCreate(serial_command_task, "xob_serial_cmd", 8192, (void *)config, 2, NULL);
+    BaseType_t created = xTaskCreate(serial_command_task, "xob_serial_cmd", 12288, (void *)config, 2, NULL);
     if (created != pdPASS) {
         ESP_LOGW(TAG, "serial command task not started");
     }
@@ -2284,6 +2886,7 @@ static void show_tts_speaking_once(bool *paused) {
     if (*paused) {
         return;
     }
+    vb6824_voice_state = XOB_VOICE_SPEAKING;
     set_avatar_state(XOB_EYES_SPEAKING, avatar_wifi_status, XOB_SCREEN_STATUS_OK);
     vTaskDelay(pdMS_TO_TICKS(120));
     avatar_refresh_paused = true;

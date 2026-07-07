@@ -20,4 +20,6 @@ data/
 *.sqlite3
 work/
 outputs/
+tmp/
+.local-references/
 .DS_Store
