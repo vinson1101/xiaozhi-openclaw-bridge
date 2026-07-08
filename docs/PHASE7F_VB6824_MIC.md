@@ -52,19 +52,19 @@ The firmware exposes:
   WebSocket voice path.
 - middle listen button: mirrors upstream XiaoZhi `ToggleChatState()` behavior:
   short press in idle enters `listen/start` with `mode:auto`; listening should
-  end by the auto endpointer, while another short press submits/stops the
-  current listen turn; thinking/speaking short press aborts the current turn and
+  end by the auto endpointer, while another short press cancels/closes listening
+  back to idle; thinking/speaking short press aborts the current turn and
   should re-enter listening. The current firmware only approximates this with a
-  bring-up state machine, so second-turn submit and speaking interrupt remain
-  explicit validation targets.
+  bring-up state machine, so listening cancel and speaking interrupt remain
+  explicit real-board validation targets.
 
 `:vb-talk` keeps `XOB_VB_TALK_PROBE_FRAMES=150`, or about 3 seconds of 20 ms
 VB6824 Opus frames, as a serial probe only. Button and wake paths use
 `XOB_VB_TALK_AUTO_MAX_FRAMES=6000`, about 120 seconds, only as a no-speech and
 runaway safety cap. The actual endpointer decodes VB6824 Opus input frames,
 waits for enough speech, then stops when the rolling tail window is mostly
-silent for about 1.5 seconds. A second middle-button press while listening
-requests submit, but does not cut the turn before enough speech has arrived.
+silent for about 1.5 seconds. A second middle-button press while listening now
+cancels listening instead of submitting the turn.
 
 ## Validation
 
@@ -263,7 +263,7 @@ The latest controlled board run validated the real chain:
 
 The current user-visible path now follows the XiaoZhi interaction contract:
 `idle -> listening`, listening ends by the Opus-frame endpointer, a listening
-short press submits without truncating speech, and thinking/speaking short press
+short press cancels back to idle, and thinking/speaking short press
 aborts and restarts listening. For no-interrupt auto conversation, TTS playback
 completion now re-enters listening on the same WebSocket session. If no speech
 follows, the firmware times out silently and returns idle without submitting an
@@ -295,9 +295,12 @@ firmware timeout is aligned to XiaoZhi-scale idle timing at about 120 seconds.
 
 The follow-up human tests on the current stable build passed the no-interrupt
 continuous dialogue flow after the LISTENING display recovery fix. A later
-real-board round also passed the basic physical middle-button submit and
+real-board round passed the old physical middle-button submit and
 speaking-interrupt path after switching interrupt handling to same-WebSocket
-`abort`.
+`abort`; the listening branch has since been changed to cancel-to-idle and
+latest VPS logs show normal board communication after that change: one
+WebSocket session opened, multiple ASR -> HuntMind -> TTS turns completed, and
+the session closed normally without a reboot loop.
 
 2026-07-07 log review of failed middle-button/dialogue tests:
 

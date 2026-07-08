@@ -125,9 +125,9 @@ OpenClaw / Hermas / Zebra adapters
 - `XOB_TTS_SPOKEN_MAX_CHARS` 只作为异常长回复的安全上限，不是主要体验策略。
 - 手动入口目标：中键短按按 XiaoZhi `ToggleChatState()` 语义分派，而不是
   按底层 UART/socket 状态猜测。`idle -> listening` 发送 `listen/start`
-  `mode:auto`；`listening -> stop/submit`；`thinking/speaking -> abort`
+  `mode:auto`；`listening -> cancel/close -> idle`；`thinking/speaking -> abort`
   并重新 listening。按钮/唤醒路径用 VB6824 Opus 解码后的语音能量做 endpointer：
-  等到足够语音后，约 1.5 秒静音尾巴自动提交；过早二按只挂起 submit，不截断语音。
+  等到足够语音后，约 1.5 秒静音尾巴自动提交；二按用于取消聆听，不提交。
   auto/realtime 模式下 TTS 播完后自动重新 listening；如果下一轮无语音，
   按原小智量级约 120 秒静默超时回 idle，不提交空 ASR。
   串口 `:vb-talk` 仍保留固定 150 帧调试窗口。

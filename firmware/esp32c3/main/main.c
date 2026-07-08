@@ -72,7 +72,6 @@ static volatile bool vb6824_audio_capture_active;
 static volatile int64_t vb6824_audio_capture_started_us;
 static volatile bool vb6824_voice_session_active;
 static volatile bool vb6824_voice_stop_requested;
-static volatile bool vb6824_voice_submit_pending;
 static volatile bool vb6824_voice_abort_requested;
 static volatile xob_voice_state_t vb6824_voice_state = XOB_VOICE_IDLE;
 static volatile int vb6824_active_sock = -1;
@@ -121,7 +120,6 @@ static char avatar_output_text[320] = "";
 #define XOB_VB_TALK_AUTO_MAX_FRAMES 6000
 #define XOB_VB_AUTO_MIN_FRAMES 15
 #define XOB_VB_NO_AUDIO_TIMEOUT_MS 5000
-#define XOB_VB_PENDING_SUBMIT_FRAMES 220
 #define XOB_VB_VAD_SPEECH_LEVEL 260
 #define XOB_VB_VAD_MIN_SPEECH_FRAMES 20
 #define XOB_VB_VAD_END_SILENCE_FRAMES 75
@@ -141,7 +139,7 @@ static char avatar_output_text[320] = "";
 #define XOB_WS_MESSAGE_BUFFER_BYTES 16384
 #define XOB_WS_MESSAGE_FALLBACK_BUFFER_BYTES 4096
 #define XOB_WS_TTS_MAX_FRAMES 2048
-#define XOB_BUTTON_LISTEN_COOLDOWN_MS 1200
+#define XOB_BUTTON_LISTEN_COOLDOWN_MS 250
 #define XOB_OPUS_SAMPLE_RATE 16000
 #define XOB_OPUS_CHANNELS 1
 #define XOB_OPUS_MAX_FRAME_MS 60
@@ -1534,18 +1532,10 @@ static esp_err_t websocket_send_vb6824_audio(
                 break;
             }
         }
-        if (vb6824_voice_submit_pending &&
-            sent_frames >= XOB_VB_PENDING_SUBMIT_FRAMES &&
-            (!auto_stop || speech_frames >= XOB_VB_VAD_MIN_SPEECH_FRAMES)) {
-            ESP_LOGI(TAG, "vb6824 websocket pending submit frames=%d speech=%d peak=%lu",
-                     sent_frames, speech_frames, (unsigned long)peak_level);
-            break;
-        }
     }
 
     vb6824_audio_capture_active = false;
     vb6824_audio_capture_started_us = 0;
-    vb6824_voice_submit_pending = false;
     vb6824_audio_enable_input(false);
     if (heard_speech != NULL) {
         *heard_speech = !auto_stop || speech_frames >= XOB_VB_VAD_MIN_SPEECH_FRAMES;
@@ -2196,6 +2186,10 @@ static esp_err_t probe_xiaozhi_websocket(
         int turn = 0;
         while (err == ESP_OK) {
             turn++;
+            if (vb6824_voice_abort_requested) {
+                err = ESP_ERR_INVALID_STATE;
+                break;
+            }
             char listen_start[96];
             snprintf(
                 listen_start,
@@ -2425,7 +2419,6 @@ static void run_vb6824_voice_session(const app_config_t *config, const char *sou
     set_avatar_dialog("LISTENING", "", "");
     set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, XOB_SCREEN_STATUS_PENDING);
     vb6824_voice_stop_requested = false;
-    vb6824_voice_submit_pending = false;
     vb6824_voice_abort_requested = false;
     esp_err_t prelisten_err = vb6824_start_voice_input();
     if (prelisten_err == ESP_OK) {
@@ -2472,19 +2465,15 @@ static esp_err_t dispatch_vb6824_voice_session(const app_config_t *config, const
     if (vb6824_voice_session_active) {
         xob_voice_state_t state = vb6824_voice_state;
         if (state == XOB_VOICE_LISTENING) {
-            if (!vb6824_audio_capture_active) {
-                vb6824_voice_submit_pending = true;
-                set_avatar_dialog("SENDING", NULL, NULL);
-                ESP_LOGI(TAG, "xiaoyuan prelisten submit pending source=%s", source);
-                return ESP_ERR_INVALID_STATE;
-            }
-            vb6824_voice_submit_pending = true;
-            set_avatar_dialog("SENDING", NULL, NULL);
-            ESP_LOGI(TAG, "xiaoyuan listen submit requested source=%s", source);
+            vb6824_voice_abort_requested = true;
+            vb6824_voice_stop_requested = true;
+            vb6824_audio_enable_input(false);
+            vb6824_audio_enable_output(false);
+            avatar_refresh_paused = false;
+            ESP_LOGI(TAG, "xiaoyuan listen cancel requested source=%s", source);
         } else {
             vb6824_voice_abort_requested = true;
             vb6824_voice_stop_requested = true;
-            vb6824_voice_submit_pending = false;
             vb6824_audio_enable_input(false);
             vb6824_audio_enable_output(false);
             avatar_refresh_paused = false;

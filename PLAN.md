@@ -69,17 +69,16 @@
 - Firmware serial `:vb-talk` sends real VB6824 Opus frames over `/device/ws` and receives `stt` / `tts` responses plus returned TTS audio bytes.
 - Firmware middle-button target UX is upstream XiaoZhi-style `ToggleChatState()`:
   idle starts `listen/start` with `mode:auto`; listening should normally end by
-  VAD/endpointer, while another short press submits/stops the current listen turn
-  instead of being ignored; thinking/speaking short press aborts the current turn
-  and should return to listening. Current firmware has a bring-up state machine
-  for this, but second-turn and speaking-interrupt behavior still need board
-  validation.
+  VAD/endpointer, while another short press cancels/closes the current listening
+  session back to idle; thinking/speaking short press aborts the current turn and
+  should return to listening. Current firmware has a bring-up state machine for
+  this, but listening-cancel and speaking-interrupt behavior still need board
+  validation after the latest toggle-alignment change.
 - Firmware starts a VB6824 wake listener after Bridge hello and maps offline command frames containing `小元` or `小智` to the listening/WebSocket voice path. The flashed board currently reports VB6824 configured wake word `你好小智`; real `你好，小元` wake requires a Xiaoyuan VB6824 voice-pack/wake-word update and rerun validation.
 - Firmware serial `:vb-ota <code>` starts the official VB6824 OTA path for a voice-pack authorization code, using `0x0205` / `0x0105`, `jl_ota_start()`, and `jl_ondata()`.
 - Board-side wake test with macOS Chinese TTS now validates the stock `你好小智` MVP path end to end through the reachable VPS: VB6824 wake command, WebSocket hello/listen/audio/stop, `stt`, returned fake WAV TTS, VB6824 playback write, and `websocket talk probe complete`. User human-speech testing still did not wake the device, so spoken wake reliability remains a tuning/voice-pack issue rather than a VPS connectivity issue.
 - Button and wake listening now decode VB6824 Opus microphone frames for a real
-  speech endpointer: wait for enough speech, stop after a silence tail, and keep
-  early middle-button submit pending instead of cutting the turn at 150 frames.
+  speech endpointer: wait for enough speech and stop after a silence tail.
   The normal end condition is the Opus-frame speech endpointer: currently about
   1.5 seconds of mostly silent tail. The 6000-frame limit is only a 120-second
   no-speech/runaway safety cap. Firmware keeps the fixed 150-frame, about
@@ -114,8 +113,8 @@
   of each TTS playback session with 40 ms of silence to avoid clipping the first
   syllable; this is a playback onset smoothing tweak, not a protocol change.
 - Product target is the original XiaoZhi voice experience: short press starts
-  `mode:auto`, listening ends by automatic VAD/endpointer, short press can submit
-  the current listen turn, speaking can be interrupted into a new listening turn,
+  `mode:auto`, listening ends by automatic VAD/endpointer, short press while
+  listening cancels back to idle, speaking can be interrupted into a new listening turn,
   and responses are streamed/low-latency. Non-streaming transcription and
   per-turn WebSocket sessions are acceptable only as bring-up fallbacks, not the
   final interaction model.
@@ -133,6 +132,10 @@
   XiaoZhi-style same-WebSocket `abort` path. Follow-up real-board testing passed
   the basic middle-button interrupt path; the remaining work is polish and full
   long-lived audio-channel semantics.
+- 2026-07-08 14:11-14:13 board log review after the latest toggle-alignment
+  build showed normal communication again: one `/device/ws` session opened,
+  multiple ASR -> HuntMind -> TTS turns completed, the WebSocket closed normally,
+  and no reboot/`POST /device/hello` appeared after the 14:09 reconnect.
 - Remaining stable-version gaps: WiFi/Bridge provisioning must stay easy to
   change per environment; Hermas is not connected yet; human-spoken `你好小智`
   wake reliability and Xiaoyuan voice-pack OTA remain unresolved; and
@@ -357,10 +360,12 @@ Tasks:
 - [x] Validate no-interrupt continuous dialogue on the real board with two
   consecutive user utterances and no middle-button press between them.
 - [ ] Replace the temporary per-turn button state machine with XiaoZhi-style
-  long-lived audio-channel semantics: idle -> listening, listening -> stop/submit,
+  long-lived audio-channel semantics: idle -> listening, listening -> cancel/close,
   thinking/speaking -> abort and re-enter listening.
-- [x] Validate second-turn middle-button submit and speaking interrupt on the real
-  board.
+- [ ] Validate middle-button listening cancel-to-idle and speaking interrupt on
+  the real board after the toggle-semantics change.
+- [x] Review VPS logs for the latest real-board run after the toggle-semantics
+  change and confirm no server-side communication error or reboot loop.
 - [x] Re-test physical middle-button paths after the current stable voice-loop
   snapshot.
 - [ ] Display recognized text and final answer summary.
@@ -420,8 +425,10 @@ Acceptance:
 Continue Phase 7 voice-loop work against the reachable Bridge host. The
 board-to-VPS-to-OpenClaw `huntmind` chain is proven with Bailian ASR/TTS, OPUS
 downlink, no-interrupt continuous dialogue, LISTENING display recovery, and
-light first-syllable playback padding. Basic physical middle-button submit and
-speaking-interrupt testing has passed. Keep WiFi/Bridge configuration
+light first-syllable playback padding. The old physical middle-button submit
+path has been replaced with XiaoZhi-style listening cancel-to-idle; latest VPS
+logs show normal board communication after that change, while full long-lived
+audio-channel semantics remains unfinished. Keep WiFi/Bridge configuration
 per-environment, connect Hermas only after its service/API shape is confirmed,
 and replace the remaining bring-up state machine with long-lived audio-channel
 semantics only if the current XiaoZhi-style path proves insufficient.
