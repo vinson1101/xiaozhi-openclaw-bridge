@@ -111,7 +111,7 @@
 - Audio playback follows the original XiaoZhi/DOIT pipeline shape: WebSocket receive enqueues returned audio, while a dedicated playback path feeds VB6824. Do not pace speaker output directly from WebSocket binary frame boundaries.
 - Current stable board test passed no-interrupt continuous dialogue after the
   LISTENING display fix and 1.5-second speech-end tail. Firmware pads the start
-  of each TTS playback session with 20 ms of silence to avoid clipping the first
+  of each TTS playback session with 40 ms of silence to avoid clipping the first
   syllable; this is a playback onset smoothing tweak, not a protocol change.
 - Product target is the original XiaoZhi voice experience: short press starts
   `mode:auto`, listening ends by automatic VAD/endpointer, short press can submit
@@ -128,10 +128,14 @@
   automatic re-entry to listening without a middle-button press, second spoken
   turn on the same WebSocket session, and silent idle timeout when no third
   utterance follows.
+- 2026-07-08 physical middle-button interrupt testing showed the old restart
+  path could surface board-side ERROR after interrupt. The current target is the
+  XiaoZhi-style same-WebSocket `abort` path. Follow-up real-board testing passed
+  the basic middle-button interrupt path; the remaining work is polish and full
+  long-lived audio-channel semantics.
 - Remaining stable-version gaps: WiFi/Bridge provisioning must stay easy to
-  change per environment; Hermas is not connected yet; physical middle-button
-  submit/interrupt still needs a real-board validation pass; human-spoken
-  `你好小智` wake reliability and Xiaoyuan voice-pack OTA remain unresolved; and
+  change per environment; Hermas is not connected yet; human-spoken `你好小智`
+  wake reliability and Xiaoyuan voice-pack OTA remain unresolved; and
   HuntMind/OpenClaw CLI latency is still the dominant thinking delay.
 - Firmware serial `:status` reports safe Bridge endpoint diagnostics without printing raw secrets.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
@@ -341,7 +345,7 @@ Tasks:
 - [x] Configure VPS Bridge with Bailian Paraformer realtime and validate real spoken Chinese from the board.
 - [x] Chunk returned MiniMax WAV into firmware-friendly WebSocket frames and validate VB6824 PCM playback with real agent output.
 - [x] Add VB6824 playback queue so WebSocket receive is decoupled from fixed-cadence UART playback.
-- [x] Pad playback session start with 20 ms silence to reduce first-syllable clipping without changing the streaming protocol.
+- [x] Pad playback session start with 40 ms silence to reduce first-syllable clipping without changing the streaming protocol.
 - [x] Add voice-mode OpenClaw prompt shaping so spoken replies are short plain Chinese instead of long Markdown sent to TTS.
 - [x] Add XiaoZhi-style spoken text segmentation before TTS and validate OPUS segment playback through VPS.
 - [x] Add VB6824 Opus-frame VAD/endpointer for button and wake listening.
@@ -355,10 +359,10 @@ Tasks:
 - [ ] Replace the temporary per-turn button state machine with XiaoZhi-style
   long-lived audio-channel semantics: idle -> listening, listening -> stop/submit,
   thinking/speaking -> abort and re-enter listening.
-- [ ] Validate second-turn middle-button submit and speaking interrupt on the real
+- [x] Validate second-turn middle-button submit and speaking interrupt on the real
   board.
-- [ ] Re-test physical middle-button paths after the current stable voice-loop
-  snapshot; the latest user round did not include middle-button validation.
+- [x] Re-test physical middle-button paths after the current stable voice-loop
+  snapshot.
 - [ ] Display recognized text and final answer summary.
 - [ ] Drive eye states from audio lifecycle: listening, thinking, speaking, error.
 
@@ -416,10 +420,10 @@ Acceptance:
 Continue Phase 7 voice-loop work against the reachable Bridge host. The
 board-to-VPS-to-OpenClaw `huntmind` chain is proven with Bailian ASR/TTS, OPUS
 downlink, no-interrupt continuous dialogue, LISTENING display recovery, and
-light first-syllable playback padding. The next validation target is the
-physical middle-button paths: second listening press submits without truncating
-speech, and speaking press aborts into a new listening turn. Keep WiFi/Bridge
-configuration per-environment, and connect Hermas only after its service/API
-shape is confirmed.
+light first-syllable playback padding. Basic physical middle-button submit and
+speaking-interrupt testing has passed. Keep WiFi/Bridge configuration
+per-environment, connect Hermas only after its service/API shape is confirmed,
+and replace the remaining bring-up state machine with long-lived audio-channel
+semantics only if the current XiaoZhi-style path proves insufficient.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

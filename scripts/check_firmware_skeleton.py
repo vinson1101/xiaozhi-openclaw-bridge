@@ -69,7 +69,7 @@ def main() -> None:
     assert "XOB_VB_PLAY_FRAME_DELAY_MS 10" in main_c and "vTaskDelayUntil(&last_time" in main_c, "VB6824 playback must match stock 320-byte/10ms pacing"
     assert "XOB_VB_PLAY_TASK_PRIORITY 9" in main_c, "VB6824 playback task priority must match the stock send task"
     assert "vb6824_send_frame(0x2081, pcm" in main_c, "VB6824 PCM playback must not wait for UART TX completion per frame"
-    assert "XOB_VB_PLAY_START_SILENCE_FRAMES 2" in main_c and "vb6824 playback start silence" in main_c, "VB6824 playback should pad the first audio frame lightly"
+    assert "XOB_VB_PLAY_START_SILENCE_FRAMES 4" in main_c and "vb6824 playback start silence" in main_c, "VB6824 playback should pad the first audio frame lightly"
     assert "XOB_VB_UART_TX_BUFFER_BYTES 4096" in main_c, "VB6824 playback needs room to queue UART TX frames"
     assert "xRingbufferCreate(XOB_VB_PLAY_QUEUE_BYTES" in main_c and "vb6824_playback_task" in main_c, "TTS playback must use a queue instead of blocking WebSocket receive"
     assert "vb6824_drain_playback_queue" in main_c and "vb6824_playback_session_active" in main_c, "VB6824 playback must use explicit output sessions and clear stale frames"
@@ -81,9 +81,10 @@ def main() -> None:
     assert "play_test_tone" in main_c and "local_volume = 100" in main_c, "local VB6824 playback needs a max-volume diagnostic tone"
     assert "XOB_WS_RECV_TIMEOUT_MS 90000" in main_c, "WebSocket receive timeout must not leave the board stuck for minutes"
     assert "status: volume=%d" in main_c, "serial status must report current volume"
-    assert "XOB_WS_MESSAGE_BUFFER_BYTES 16384" in main_c, "WebSocket receive buffer must fit ESP32-C3 RAM"
+    assert "XOB_WS_MESSAGE_BUFFER_BYTES 16384" in main_c and "XOB_WS_MESSAGE_FALLBACK_BUFFER_BYTES 4096" in main_c, "WebSocket receive buffer must keep the stable default and provide a low-memory fallback"
     assert "XOB_WS_TTS_MAX_FRAMES 2048" in main_c, "streaming TTS must not hit the old short probe frame cap"
     assert "play_tts_pcm_frame" in main_c and "vb6824_play_pcm(pcm, pcm_len" in main_c, "TTS audio frames must enter playback as they arrive"
+    assert "xob_opus_decoder_reset(tts_opus_decoder)" in main_c, "interrupted TTS must reset Opus decoder before the next playback session"
     assert "vb_uart_event_queue" in main_c and "vb6824_uart_task" in main_c, "VB6824 UART parsing must use one stock-style event task"
     assert "vb6824_audio_enable_input(true)" in main_c and "vb6824_audio_read(buf" in main_c, "VB6824 capture must read from an input queue"
     assert "vb6824_audio_enable_output(true)" in main_c and "vb6824_audio_write(pcm" in main_c, "VB6824 playback must use output enable plus TX queue"
@@ -94,11 +95,17 @@ def main() -> None:
     assert "XOB_VB_VAD_END_SILENCE_FRAMES 75" in main_c, "speech endpointer should allow about 1.5s pauses before submit"
     assert "XOB_VB_TALK_AUTO_MAX_FRAMES 6000" in main_c and "XOB_VB_VAD_NO_SPEECH_FRAMES 6000" in main_c, "no-speech auto listening timeout should match XiaoZhi-scale idle timing"
     assert "vb6824_voice_submit_pending = true" in main_c and "pending submit frames=%d speech=%d" in main_c, "early middle submit must wait for enough speech instead of cutting the turn"
+    assert "XOB_BUTTON_LISTEN_COOLDOWN_MS 1200" in main_c and "button ignored during cooldown" in main_c, "middle button needs debounce/cooldown for interrupt restart"
+    assert "websocket_send_abort" in main_c and "active session abort requested" in main_c, "middle interrupt should send XiaoZhi-style abort instead of rebuilding the session"
+    assert "vTaskDelay(pdMS_TO_TICKS(120))" in main_c, "middle interrupt should re-enter listening without the normal continuous-turn delay"
+    assert "avatar_refresh_paused = false" in main_c and "active session abort requested" in main_c, "middle interrupt must unpause display refresh before showing LISTENING"
+    assert "shutdown(sock, SHUT_RDWR)" not in main_c, "middle interrupt must not tear down the active WebSocket"
     assert "idf.py flash" not in build_script, "build script must not flash"
     partitions = _read_partitions(FW / "partitions.csv")
     assert partitions == PARTITIONS, "firmware partition table must match stock layout"
     server_py = (ROOT / "src" / "xiaozhi_openclaw_bridge" / "server.py").read_text()
     assert "queue.Queue" in server_py and "xob_tts_stream" in server_py, "TTS streaming must prefetch provider audio while pacing device frames"
+    assert "_read_pending_ws_abort" in server_py and "select.select" in server_py and "stream_aborted" in server_py, "server must stop streaming TTS when the device sends abort"
     print("check_firmware_skeleton ok")
 
 

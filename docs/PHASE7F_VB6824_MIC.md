@@ -293,10 +293,11 @@ Both spoken turns used the same server session id
 That validation used the earlier 5-second no-speech safety cap; the current
 firmware timeout is aligned to XiaoZhi-scale idle timing at about 120 seconds.
 
-The follow-up human test on the current stable build passed the no-interrupt
-continuous dialogue flow after the LISTENING display recovery fix. The physical
-middle-button submit and speaking-interrupt paths were not included in that
-round and remain explicit validation work.
+The follow-up human tests on the current stable build passed the no-interrupt
+continuous dialogue flow after the LISTENING display recovery fix. A later
+real-board round also passed the basic physical middle-button submit and
+speaking-interrupt path after switching interrupt handling to same-WebSocket
+`abort`.
 
 2026-07-07 log review of failed middle-button/dialogue tests:
 

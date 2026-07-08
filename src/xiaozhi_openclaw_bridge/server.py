@@ -7,6 +7,7 @@ import json
 import os
 import queue
 import re
+import select
 import subprocess
 import threading
 import time
@@ -625,7 +626,10 @@ def build_server(
                             )
                         sent_audio_frames = 0
                         sent_audio_bytes = 0
+                        stream_aborted = False
                         for message in messages:
+                            if stream_aborted:
+                                break
                             if message.get("type") == "tts_audio":
                                 audio = message["audio"]
                                 sent_audio_frames += 1
@@ -634,10 +638,11 @@ def build_server(
                             else:
                                 _write_ws_json(self.wfile, message)
                                 if _tts_streaming_enabled() and message.get("type") == "tts" and message.get("state") == "sentence_start":
-                                    frames, audio_bytes = _write_tts_audio_stream(
+                                    frames, audio_bytes, stream_aborted = _write_tts_audio_stream(
                                         self.wfile,
                                         session_id,
                                         str(message.get("text") or ""),
+                                        lambda: _read_pending_ws_abort(self.connection, self.rfile, app, headers, session_id),
                                     )
                                     sent_audio_frames += frames
                                     sent_audio_bytes += audio_bytes
@@ -647,6 +652,8 @@ def build_server(
                             f"tts_audio_frames={sent_audio_frames} tts_audio_bytes={sent_audio_bytes}",
                             flush=True,
                         )
+            except (BrokenPipeError, ConnectionResetError) as exc:
+                print(f"GET /device/ws -> 200 interrupted ({exc.__class__.__name__}: {exc})", flush=True)
             except OSError as exc:
                 if str(exc) == "missing websocket header":
                     print("GET /device/ws -> 200 closed", flush=True)
@@ -713,6 +720,25 @@ def _read_ws_frame(stream: Any) -> tuple[int, bytes]:
     if mask:
         payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
     return opcode, payload
+
+
+def _read_pending_ws_abort(
+    sock: Any,
+    stream: Any,
+    app: BridgeApplication,
+    headers: Mapping[str, str],
+    session_id: str,
+) -> bool:
+    readable, _, _ = select.select([sock], [], [], 0)
+    if not readable:
+        return False
+    opcode, body = _read_ws_frame(stream)
+    if opcode == 8:
+        return True
+    if opcode != 1:
+        return False
+    status, control = app.device_websocket_control(body, headers, session_id)
+    return status == 200 and control.get("type") == "abort"
 
 
 def _write_ws_json(stream: Any, payload: dict[str, Any]) -> None:
@@ -857,7 +883,7 @@ def _split_pcm_frames(pcm: bytes, max_bytes: int) -> tuple[bytes, ...]:
     return tuple(pcm[offset : offset + payload_bytes] for offset in range(0, len(pcm), payload_bytes))
 
 
-def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[int, int]:
+def _write_tts_audio_stream(stream: Any, session_id: str, text: str, abort_requested: Any = None) -> tuple[int, int, bool]:
     frames = 0
     sent_bytes = 0
     started_at = time.monotonic()
@@ -880,6 +906,15 @@ def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[in
             )
             summary = f"{provider.provider} streaming tts"
         for audio in audio_chunks:
+            if abort_requested is not None and abort_requested():
+                _write_ws_json(stream, {"session_id": session_id, "type": "tts", "state": "stop"})
+                print(
+                    "tts stream "
+                    f"session={session_id} frames={frames} bytes={sent_bytes} "
+                    f"elapsed_ms={int((time.monotonic() - started_at) * 1000)} aborted=1",
+                    flush=True,
+                )
+                return frames, sent_bytes, True
             frames += 1
             sent_bytes += len(audio)
             _write_ws_binary(stream, audio)
@@ -905,7 +940,7 @@ def _write_tts_audio_stream(stream: Any, session_id: str, text: str) -> tuple[in
             f"error={_short_log_text(str(exc))}",
             flush=True,
         )
-    return frames, sent_bytes
+    return frames, sent_bytes, False
 
 
 def _tts_streaming_enabled() -> bool:

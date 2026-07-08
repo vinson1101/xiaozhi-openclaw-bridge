@@ -74,7 +74,6 @@ static volatile bool vb6824_voice_session_active;
 static volatile bool vb6824_voice_stop_requested;
 static volatile bool vb6824_voice_submit_pending;
 static volatile bool vb6824_voice_abort_requested;
-static volatile bool vb6824_voice_restart_requested;
 static volatile xob_voice_state_t vb6824_voice_state = XOB_VOICE_IDLE;
 static volatile int vb6824_active_sock = -1;
 static volatile bool avatar_refresh_paused;
@@ -135,12 +134,14 @@ static char avatar_output_text[320] = "";
 #define XOB_VB_PLAY_PREROLL_BYTES 1920
 #define XOB_VB_PLAY_PREROLL_MAX_WAIT_MS 80
 #define XOB_VB_PLAY_START_WHEN_FREE_BELOW_BYTES (8 * 1024)
-#define XOB_VB_PLAY_START_SILENCE_FRAMES 2
+#define XOB_VB_PLAY_START_SILENCE_FRAMES 4
 #define XOB_VB_PLAY_TASK_STACK_BYTES 3072
 #define XOB_VB_PLAY_TASK_PRIORITY 9
 #define XOB_WS_RECV_TIMEOUT_MS 90000
 #define XOB_WS_MESSAGE_BUFFER_BYTES 16384
+#define XOB_WS_MESSAGE_FALLBACK_BUFFER_BYTES 4096
 #define XOB_WS_TTS_MAX_FRAMES 2048
+#define XOB_BUTTON_LISTEN_COOLDOWN_MS 1200
 #define XOB_OPUS_SAMPLE_RATE 16000
 #define XOB_OPUS_CHANNELS 1
 #define XOB_OPUS_MAX_FRAME_MS 60
@@ -1567,6 +1568,11 @@ static esp_err_t websocket_send_masked_text(int sock, const char *text) {
     return websocket_send_masked_frame(sock, 1, text, strlen(text));
 }
 
+static esp_err_t websocket_send_abort(int sock) {
+    static const char abort_message[] = "{\"session_id\":\"\",\"type\":\"abort\"}";
+    return websocket_send_masked_text(sock, abort_message);
+}
+
 static esp_err_t discard_websocket_payload(int sock, size_t len) {
     uint8_t trash[128];
     while (len > 0) {
@@ -1691,6 +1697,9 @@ static void vb6824_reset_playback_buffer(void) {
 
 static void vb6824_prepare_playback_session(void) {
     vb6824_reset_playback_buffer();
+    if (tts_opus_decoder != NULL) {
+        (void)xob_opus_decoder_reset(tts_opus_decoder);
+    }
     vb6824_audio_enable_output(true);
 }
 
@@ -2233,16 +2242,32 @@ static esp_err_t probe_xiaozhi_websocket(
             size_t message_len = XOB_WS_MESSAGE_BUFFER_BYTES;
             char *message = malloc(message_len);
             if (message == NULL) {
+                message_len = XOB_WS_MESSAGE_FALLBACK_BUFFER_BYTES;
+                message = malloc(message_len);
+                if (message != NULL) {
+                    ESP_LOGW(TAG, "websocket message buffer fallback bytes=%u", (unsigned)message_len);
+                }
+            }
+            bool turn_aborted = false;
+            bool abort_sent = false;
+            if (message == NULL) {
                 err = ESP_ERR_NO_MEM;
             } else {
                 if (vb6824_voice_abort_requested) {
-                    err = ESP_ERR_INVALID_STATE;
-                } else {
+                    turn_aborted = true;
+                    vb6824_audio_enable_output(false);
+                    err = websocket_send_abort(sock);
+                    if (err == ESP_OK) {
+                        abort_sent = true;
+                        ESP_LOGI(TAG, "websocket abort sent turn=%d", turn);
+                    }
+                }
+                if (err == ESP_OK) {
                     err = recv_websocket_text(sock, message, message_len);
                 }
                 if (err == ESP_OK && json_contains_string(message, "type", "stt")) {
                     char text[160];
-                    if (json_extract_string(message, "text", text, sizeof(text))) {
+                    if (!turn_aborted && json_extract_string(message, "text", text, sizeof(text))) {
                         set_avatar_dialog("THINKING", text, "");
                     }
                     ESP_LOGI(TAG, "websocket stt received");
@@ -2254,13 +2279,21 @@ static esp_err_t probe_xiaozhi_websocket(
                 size_t played_audio_bytes = 0;
                 bool saw_tts_stop = false;
                 bool tts_refresh_paused = false;
-                if (err == ESP_OK) {
+                if (err == ESP_OK && !turn_aborted) {
                     vb6824_prepare_playback_session();
                 }
                 for (int i = 0; err == ESP_OK && i < XOB_WS_TTS_MAX_FRAMES && !saw_tts_stop; i++) {
                     if (vb6824_voice_abort_requested) {
-                        err = ESP_ERR_INVALID_STATE;
-                        break;
+                        turn_aborted = true;
+                        vb6824_audio_enable_output(false);
+                        if (!abort_sent) {
+                            err = websocket_send_abort(sock);
+                            if (err != ESP_OK) {
+                                break;
+                            }
+                            abort_sent = true;
+                            ESP_LOGI(TAG, "websocket abort sent turn=%d", turn);
+                        }
                     }
                     uint8_t opcode = 0;
                     size_t payload_len = 0;
@@ -2270,6 +2303,9 @@ static esp_err_t probe_xiaozhi_websocket(
                     }
                     if (opcode == 2) {
                         tts_audio_bytes += payload_len;
+                        if (turn_aborted) {
+                            continue;
+                        }
                         show_tts_speaking_once(&tts_refresh_paused);
                         if (payload_len >= message_len) {
                             ESP_LOGW(TAG, "tts audio too large to play bytes=%u", (unsigned)payload_len);
@@ -2291,28 +2327,42 @@ static esp_err_t probe_xiaozhi_websocket(
                     }
                     if (json_contains_string(message, "state", "sentence_start")) {
                         char text[320];
-                        if (json_extract_string(message, "text", text, sizeof(text))) {
+                        if (!turn_aborted && json_extract_string(message, "text", text, sizeof(text))) {
                             set_avatar_dialog("SPEAKING", NULL, text);
                         }
-                        show_tts_speaking_once(&tts_refresh_paused);
+                        if (!turn_aborted) {
+                            show_tts_speaking_once(&tts_refresh_paused);
+                        }
                     }
                     if (json_contains_string(message, "state", "stop")) {
                         saw_tts_stop = true;
                     }
                 }
-                if (err == ESP_OK && (!saw_tts_stop || tts_audio_bytes == 0)) {
+                if (err == ESP_OK && !turn_aborted && (!saw_tts_stop || tts_audio_bytes == 0)) {
                     err = ESP_FAIL;
                 }
                 if (err == ESP_OK) {
-                    if (err == ESP_OK && played_audio_bytes > 0) {
+                    if (!turn_aborted && played_audio_bytes > 0) {
                         vb6824_audio_enable_output(true);
                         err = vb6824_wait_playback(vb6824_playback_enqueued_bytes, XOB_WS_RECV_TIMEOUT_MS);
+                        if (err != ESP_OK && vb6824_voice_abort_requested) {
+                            turn_aborted = true;
+                            err = ESP_OK;
+                        }
                     }
                 }
                 vb6824_finish_playback_session();
                 avatar_refresh_paused = false;
                 if (err == ESP_OK) {
-                    if (continuous) {
+                    if (turn_aborted) {
+                        vb6824_voice_abort_requested = false;
+                        vb6824_voice_stop_requested = false;
+                        vb6824_voice_state = XOB_VOICE_LISTENING;
+                        set_avatar_dialog("LISTENING", "", "");
+                        set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+                        vTaskDelay(pdMS_TO_TICKS(120));
+                        ESP_LOGI(TAG, "websocket talk turn aborted turn=%d", turn);
+                    } else if (continuous) {
                         vb6824_voice_state = XOB_VOICE_LISTENING;
                         set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
                         vTaskDelay(pdMS_TO_TICKS(320));
@@ -2338,7 +2388,11 @@ static esp_err_t probe_xiaozhi_websocket(
     }
     close(sock);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "websocket probe failed: %s", esp_err_to_name(err));
+        if (vb6824_voice_abort_requested) {
+            ESP_LOGI(TAG, "websocket probe interrupted: %s", esp_err_to_name(err));
+        } else {
+            ESP_LOGW(TAG, "websocket probe failed: %s", esp_err_to_name(err));
+        }
     }
     return err;
 }
@@ -2392,8 +2446,9 @@ static void run_vb6824_voice_session(const app_config_t *config, const char *sou
     }
     if (vb6824_voice_abort_requested) {
         vb6824_audio_enable_output(false);
+        avatar_refresh_paused = false;
         vb6824_voice_state = XOB_VOICE_IDLE;
-        set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, avatar_bridge_status);
+        set_avatar_state(XOB_EYES_IDLE, avatar_wifi_status, XOB_SCREEN_STATUS_OK);
     } else if (err != ESP_OK) {
         ESP_LOGW(TAG, "xiaoyuan voice session failed source=%s err=%s", source, esp_err_to_name(err));
         vb6824_voice_state = XOB_VOICE_IDLE;
@@ -2407,16 +2462,9 @@ static void run_vb6824_voice_session(const app_config_t *config, const char *sou
 
 static void vb6824_voice_session_task(void *arg) {
     vb6824_voice_session_arg_t *session = (vb6824_voice_session_arg_t *)arg;
-    const app_config_t *config = session->config;
-    const char *source = session->source;
     run_vb6824_voice_session(session->config, session->source);
-    bool restart = vb6824_voice_restart_requested;
-    vb6824_voice_restart_requested = false;
     free(session);
     vb6824_voice_session_active = false;
-    if (restart) {
-        (void)dispatch_vb6824_voice_session(config, source);
-    }
     vTaskDelete(NULL);
 }
 
@@ -2434,18 +2482,15 @@ static esp_err_t dispatch_vb6824_voice_session(const app_config_t *config, const
             set_avatar_dialog("SENDING", NULL, NULL);
             ESP_LOGI(TAG, "xiaoyuan listen submit requested source=%s", source);
         } else {
-            vb6824_voice_restart_requested = true;
             vb6824_voice_abort_requested = true;
             vb6824_voice_stop_requested = true;
             vb6824_voice_submit_pending = false;
             vb6824_audio_enable_input(false);
             vb6824_audio_enable_output(false);
-            int sock = vb6824_active_sock;
-            if (sock >= 0) {
-                shutdown(sock, SHUT_RDWR);
-            }
-            set_avatar_dialog("LISTENING", NULL, NULL);
-            ESP_LOGI(TAG, "xiaoyuan active session abort+restart requested source=%s state=%d sock=%d", source, state, sock);
+            avatar_refresh_paused = false;
+            set_avatar_dialog("LISTENING", "", "");
+            set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+            ESP_LOGI(TAG, "xiaoyuan active session abort requested source=%s state=%d", source, state);
         }
         return ESP_ERR_INVALID_STATE;
     }
@@ -2951,6 +2996,7 @@ static void button_task(void *arg) {
     (void)arg;
     uint8_t last = button_mask();
     int64_t config_chord_since = 0;
+    int64_t listen_button_allowed_us = 0;
 
     while (true) {
         uint8_t mask = button_mask();
@@ -2983,11 +3029,16 @@ static void button_task(void *arg) {
                 ESP_LOGI(TAG, "volume=%d", local_volume);
             }
             if ((pressed & XOB_BUTTON_LISTEN) != 0) {
-                ESP_LOGI(TAG, "interrupt/listen button pressed");
-                if (strlen(active_config.bridge_url) > 0) {
-                    dispatch_vb6824_voice_session(&active_config, "button");
+                if (now < listen_button_allowed_us) {
+                    ESP_LOGI(TAG, "interrupt/listen button ignored during cooldown");
                 } else {
-                    set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+                    listen_button_allowed_us = now + ((int64_t)XOB_BUTTON_LISTEN_COOLDOWN_MS * 1000);
+                    ESP_LOGI(TAG, "interrupt/listen button pressed");
+                    if (strlen(active_config.bridge_url) > 0) {
+                        dispatch_vb6824_voice_session(&active_config, "button");
+                    } else {
+                        set_avatar_state(XOB_EYES_LISTENING, avatar_wifi_status, avatar_bridge_status);
+                    }
                 }
             }
         }
