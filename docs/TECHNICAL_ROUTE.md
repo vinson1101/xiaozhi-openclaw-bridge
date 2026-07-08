@@ -4,7 +4,7 @@
 
 先做服务端 Bridge，再做设备模拟器，最后刷板接入。
 
-原因很简单：当前 ESP32-C3 板的音频 pinout、codec、屏幕初始化和内存余量都有风险；OpenClaw / Hermas / Zebra 的连接闭环没有这些硬件风险。先把文本链路跑通，再接音频和固件。
+原因很简单：当前 ESP32-C3 板的音频 pinout、codec、屏幕初始化和内存余量都有风险；OpenClaw / Hermes / Zebra 的连接闭环没有这些硬件风险。先把文本链路跑通，再接音频和固件。
 
 目标路线：
 
@@ -18,13 +18,13 @@ Bridge HTTP JSON API, WebSocket later for streaming audio
 SQLite session events + compact memory
         |
         v
-OpenClaw / Hermas / Zebra adapters
+OpenClaw / Hermes / Zebra adapters
 ```
 
 ## 1. 不走的路线
 
 - 不走官方小智云，不依赖 `mqtt.xiaozhi.me`。
-- 不把 OpenClaw / Hermas / Zebra 塞进 ESP32-C3。
+- 不把 OpenClaw / Hermes / Zebra 塞进 ESP32-C3。
 - 不直接移植 MimiClaw 到当前 C3 板；MimiClaw 只作为记忆和 skill 设计参考。
 - 不先写完整固件；固件在服务端协议稳定后再做。
 - 不让设备保存服务端 API key；设备只保存配对 token。
@@ -151,7 +151,7 @@ Bridge 职责：
 - 设备配对和鉴权。
 - 接收文本或音频。
 - 调用 ASR。
-- 选择 OpenClaw / Hermas / Zebra 后端。
+- 选择 OpenClaw / Hermes / Zebra 后端。
 - 记录 session events。
 - 生成短摘要记忆。
 - 调用 TTS。
@@ -159,9 +159,13 @@ Bridge 职责：
 
 小智式 server 不是单独的 TTS 服务。它是 voice gateway：对板子暴露
 XiaoZhi-compatible WebSocket，对内编排 ASR/VAD、Agent、TTS、播放状态和
-interrupt。OpenClaw、Hermas、Lobster 这类系统应该接在 Agent 适配层，提供
-内容回复、工具调用和长期记忆；TTS 仍由 voice gateway 统一处理，除非某个
-Agent 自身能返回可取消的实时音频流。
+interrupt。OpenClaw、Hermes、Lobster 这类系统应该接在 Agent 适配层，提供
+内容回复、工具调用和长期记忆；TTS 仍由 voice gateway 统一处理。Hermes
+原生支持 ASR/TTS 可以改变 provider 选型，但不改变分层：Hermes 仍先作为
+Agent target 接入；如果 Hermes TTS 能稳定返回 Bridge 可消费的 streaming
+audio 或 PCM/WAV，就新增 `XOB_TTS_PROVIDER=hermes` 一类的 `TtsProvider`。
+该 provider 的输出仍由 Bridge 分句、缓存、转 OPUS packets、下发到板端，并
+接受现有 interrupt / `tts stop` / fallback 状态机管理。
 
 当前固件仍是一轮对话按一次 WebSocket session 跑完，但按钮体验必须遵守小智
 状态机：start listening、endpointer 自动提交、speaking 可打断并重进 listening。
@@ -174,7 +178,7 @@ Agent 自身能返回可取消的实时音频流。
 ```json
 {
   "session_id": "string",
-  "target": "openclaw|hermas|zebra",
+  "target": "openclaw|hermes|zebra",
   "user_text": "string",
   "context": {
     "device_id": "string",
@@ -199,7 +203,7 @@ Agent 自身能返回可取消的实时音频流。
 
 1. Fake adapter：本地回声和测试。
 2. OpenClaw adapter：当前验证路径是 CLI 包装，`openclaw agent --agent huntmind --message ... --session-key ...`，服务端 Bridge 通过受限 wrapper 调用。
-3. Hermas adapter：等真实 API 明确后接入。
+3. Hermes adapter：等真实 API 明确后接入。
 4. Lobster adapter：按同一 `AgentRequest` / `AgentResponse` contract 接入；如果只提供同步文本，先可用但体验不会等同小智。要做到小智体验，需要支持 token 或句子级 streaming 输出，供 Bridge 边生成边送 TTS。
 5. Zebra adapter：创建/恢复 Zebra session，消费事件或轮询状态。
 
@@ -218,7 +222,7 @@ bridge SQLite
   backend routing history
 
 agent native memory
-  OpenClaw / Hermas / Zebra 自己的长期记忆
+  OpenClaw / Hermes / Zebra 自己的长期记忆
 ```
 
 Bridge 里的 `session_events` 是事实源；`memories` 是从事件中压缩出来的派生信息，可以重建和纠正。这个边界参考 Zebra 的事件优先架构。
@@ -246,7 +250,7 @@ VPS：
 - 必须使用 `wss://`。
 - 反向代理终止 TLS。
 - 设备只持有配对 token。
-- OpenClaw / Hermas / Zebra API 不直接暴露公网。
+- OpenClaw / Hermes / Zebra API 不直接暴露公网。
 - 服务端 API key 只放 VPS 环境变量或 secret 文件。
 
 审批：
@@ -332,13 +336,23 @@ TtsProvider.stream_audio(text, voice) -> Iterable[pcm16_16k_mono]
 2. 固定语音包：唤醒、确认、打断、错误、配置提示等常用短句预生成并缓存。
 3. Mock ASR/TTS：固定文本和固定音频。
 4. Remote ASR/TTS：ASR 用 `paraformer-realtime-v2` 先接通真实链路；动态 TTS 可以先由 provider 产出 WAV/PCM，但 Bridge 到板端的 WebSocket 音频应按小智式 OPUS packets 传输，固件端再解码成 16 kHz mono PCM 给 VB6824 播放队列。
-5. 可选本地 ASR/TTS：只在 VPS 资源允许时做，不在 ESP32-C3 上做。
+5. 可选本地 ASR/TTS：只在 VPS 或 LAN host 资源允许时做，不在 ESP32-C3
+   上做。Hermes 原生 ASR/TTS 属于这一层；如果采用，必须作为 Bridge
+   `AsrProvider` / `TtsProvider` 接入，不能直接替代 Bridge 的设备协议、
+   播放状态和 interrupt 编排。
 
 TTS provider 选型按体验优先：
 
 1. 首选：WebSocket/SSE 真流式输入和输出，服务端能尽早拿到音频增量，并 packetize 成 OPUS 发给板端。
 2. 可接受：provider 返回 PCM/WAV，VPS 侧按句子/片段调用 TTS，用 `ffmpeg` 转成裸 OPUS packets 再发给板端。
 3. 不接受作为长期方案：把 raw PCM 从 VPS 直接推到板端；带宽和抖动会破坏小智式连续播放体验。
+
+Hermes TTS 进入候选时的最小验收：
+
+1. 能用稳定 CLI/API 输入文本并返回音频，且延迟不明显劣于现有 Bailian 路线。
+2. 输出格式可被 Bridge 转成 16 kHz mono OPUS packets，或原生返回等价流。
+3. 可按句子/片段合成，不能要求整段超长文本一次性合成完才返回。
+4. 失败时 Bridge 能回退到当前配置的 TTS provider 或错误提示音。
 
 ## 8. 验证路线
 

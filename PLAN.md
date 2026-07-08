@@ -94,7 +94,18 @@
 - The deployed Bridge service maps `target=huntmind` through a restricted local wrapper, so the public device host still exposes only the Bridge, not OpenClaw itself.
 - Firmware serial `:target <agent>` updates only `xob.default_target` and reboots. The AP provisioning page treats `default_target` as a free-form route name, not as a WiFi choice.
 - The flashed board has `default_target=huntmind`. The earlier fake-ASR transport loop was superseded by the Bailian ASR validation below.
-- Hermas/Lobster should be integrated as Agent adapters behind the Bridge, not as board-side runtimes or TTS providers. The XiaoZhi-like server role is the Bridge voice gateway: device protocol, ASR/VAD, Agent routing, TTS, playback state, interrupt, and audit.
+- `huntmind` is the current OpenClaw agent route. Hermes is a separate Bridge
+  route, and the remote Hermes runtime is configured as the `xiaoyuan` / `小元`
+  persona.
+- Hermes/Lobster should be integrated as Agent adapters behind the Bridge, not as board-side runtimes or TTS providers. The XiaoZhi-like server role is the Bridge voice gateway: device protocol, ASR/VAD, Agent routing, TTS, playback state, interrupt, and audit.
+- LAN Hermes first integration path is the host-local Hermes Agent CLI on
+  `ubuntu@192.168.110.30`: `/usr/local/bin/hermes -z <prompt>` over SSH with a
+  dedicated key. Docker dashboard/gateway discovery is not the Bridge adapter
+  path for this phase.
+- Hermes native ASR/TTS does not replace the Bridge voice gateway. If it proves
+  useful, add it later as configurable `AsrProvider` / `TtsProvider`
+  implementations after the streaming, interrupt, and audio-format contracts
+  are confirmed.
 - ASR now has an opt-in OpenAI provider path that wraps HTTP PCM16 as WAV and VB6824 WebSocket Opus frames as Ogg Opus before transcription. It is not enabled on the VPS because `OPENAI_API_KEY` is not configured.
 - ASR has Alibaba Cloud Bailian/DashScope provider paths. Fun-ASR-Flash was the
   first bring-up provider; the current VPS voice-chain path uses
@@ -137,9 +148,11 @@
   multiple ASR -> HuntMind -> TTS turns completed, the WebSocket closed normally,
   and no reboot/`POST /device/hello` appeared after the 14:09 reconnect.
 - Remaining stable-version gaps: WiFi/Bridge provisioning must stay easy to
-  change per environment; Hermas is not connected yet; human-spoken `你好小智`
-  wake reliability and Xiaoyuan voice-pack OTA remain unresolved; and
-  HuntMind/OpenClaw CLI latency is still the dominant thinking delay.
+  change per environment; human-spoken `你好小智` wake reliability and Xiaoyuan
+  voice-pack OTA remain unresolved; and CLI latency is still the dominant
+  thinking delay for synchronous agent targets. This branch validates the
+  Hermes connection gap via the LAN host-local CLI route, while keeping board
+  target selection configurable.
 - Firmware serial `:status` reports safe Bridge endpoint diagnostics without printing raw secrets.
 - Firmware provisioning can keep existing non-empty values when fields are left blank.
 - Deployment units disable the generic `/command` route for public device hosts.
@@ -205,22 +218,44 @@ Acceptance:
 - Errors are returned as structured Bridge responses.
 - No OpenClaw credentials are stored in Git.
 
-## Phase 3 - Hermas Adapter
+## Phase 3 - Hermes Adapter
 
-Goal: reserve the same contract for Hermas without blocking earlier work.
+Goal: connect Bridge to the LAN-local Hermes Agent CLI while keeping OpenClaw,
+WiFi, TTS voices, voice packs, and agent targets runtime configurable.
 
 Tasks:
 
-- [ ] Confirm Hermas service API.
-- [ ] Implement `HermasAdapter`.
-- [ ] Normalize status, text, summary, and artifacts.
-- [ ] Add one smoke test or fixture test.
+- [x] Confirm LAN Hermes host-local CLI entry over SSH.
+- [x] Confirm the remote Hermes persona/agent is `xiaoyuan` / `小元`; `huntmind`
+  remains OpenClaw-only.
+- [x] Implement `hermes-cli` target adapter.
+- [x] Normalize basic text status, summary, and artifact metadata.
+- [x] Add one smoke test or fixture test.
+- [x] Validate Bridge `/command` with `target:"hermes"` against the LAN CLI.
+- [x] Keep Hermes native ASR/TTS as a future provider option, not a reason to
+  replace the Bridge gateway in this branch.
+- [x] Temporarily switch the board to `:target hermes`, confirm the currently
+  configured Bridge returns HTTP 400 for that target, then restore
+  `:target huntmind`.
+- [x] Deploy this branch's Bridge on `ubuntu@192.168.110.30` as
+  `xob-bridge-hermes.service`, listening on `0.0.0.0:8788`, with
+  `target=hermes` routed to the host-local `/usr/local/bin/hermes`.
+- [x] Point the board at `http://192.168.110.30:8788` and set
+  `xob.default_target=hermes` for full board-to-Hermes testing.
+- [x] Increase firmware `/device/command` timeout to 30 seconds for the current
+  synchronous Hermes CLI bring-up path.
+- [x] Run Hermes CLI through `--safe-mode --toolsets safe` for Bridge bring-up
+  so voice commands like "检查链路" cannot recursively call the Bridge.
+- [ ] Configure the Hermes-branch Bridge deployment with the same real
+  ASR/TTS/OPUS voice-chain environment as the validated OpenClaw Bridge.
 - [ ] Add Lobster adapter using the same `AgentRequest` / `AgentResponse` contract after its API/CLI shape is confirmed.
-- [ ] Prefer token or sentence streaming for Hermas/Lobster voice targets; synchronous full-text responses are acceptable only for bring-up.
+- [ ] Prefer token or sentence streaming for Hermes/Lobster voice targets; synchronous full-text responses are acceptable only for bring-up.
 
 Acceptance:
 
-- Hermas can be selected by `target:"hermas"` using the same `/command` API.
+- Hermes can be selected by `target:"hermes"` using the same `/command` API.
+- See `docs/PHASE3_HERMES_LAN_CLI.md` for this branch's Hermes LAN task list
+  and validation evidence.
 
 ## Phase 4 - Device Protocol And Simulator
 
@@ -377,7 +412,7 @@ Acceptance:
 press button
   -> speak command
   -> Bridge transcribes
-  -> OpenClaw/Hermas responds
+  -> OpenClaw/Hermes responds
   -> board speaks answer
   -> screen shows short result
 ```
@@ -418,7 +453,7 @@ Acceptance:
 
 - Device connects to `wss://...`.
 - Bridge can restart without losing session state.
-- Public internet does not expose OpenClaw/Hermas/Zebra directly.
+- Public internet does not expose OpenClaw/Hermes/Zebra directly.
 
 ## Next Task
 
@@ -429,8 +464,10 @@ light first-syllable playback padding. The old physical middle-button submit
 path has been replaced with XiaoZhi-style listening cancel-to-idle; latest VPS
 logs show normal board communication after that change, while full long-lived
 audio-channel semantics remains unfinished. Keep WiFi/Bridge configuration
-per-environment, connect Hermas only after its service/API shape is confirmed,
-and replace the remaining bring-up state machine with long-lived audio-channel
-semantics only if the current XiaoZhi-style path proves insufficient.
+per-environment. This branch connects Hermes through the LAN CLI path; richer
+Hermes API or native ASR/TTS provider integration should wait until those
+contracts are confirmed. Replace the remaining bring-up state machine with
+long-lived audio-channel semantics only if the current XiaoZhi-style path proves
+insufficient.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

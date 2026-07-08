@@ -1,7 +1,7 @@
 [project]
 name = "xiaozhi-openclaw-bridge"
 version = "0.1.0"
-description = "Private ESP32 voice terminal bridge for OpenClaw, Hermas, and Zebra-backed agents"
+description = "Private ESP32 voice terminal bridge for OpenClaw, Hermes, and Zebra-backed agents"
 requires-python = ">=3.9"
 dependencies = []
 

@@ -2,12 +2,12 @@
 
 Phase 2 adds the first real backend adapter. OpenClaw is the first configured
 target, but the Bridge route uses a target table so another environment can
-route `hermas` or `lobster` without changing firmware.
+route `hermes` or `lobster` without changing firmware.
 
 ## Scope
 
 - `target:"openclaw"` in `POST /command`
-- configurable target aliases such as `target:"hermas"`
+- configurable target aliases such as `target:"hermes"`
 - SSH-based OpenClaw CLI invocation
 - safe default mode that only checks `openclaw health --json`
 - optional command mode using `openclaw agent --json --message ...`
@@ -42,22 +42,36 @@ Add another routable target by mapping a target name to an adapter kind and an
 environment-variable prefix:
 
 ```bash
-export XOB_AGENT_TARGETS='hermas=openclaw-cli:XOB_HERMAS'
-export XOB_HERMAS_SSH_TARGET='<user>@<hermas-host>'
-export XOB_HERMAS_SSH_KEY='/absolute/path/to/hermas/key'
+export XOB_AGENT_TARGETS='hermes=openclaw-cli:XOB_HERMES'
+export XOB_HERMES_SSH_TARGET='<user>@<hermes-host>'
+export XOB_HERMES_SSH_KEY='/absolute/path/to/hermes/key'
+```
+
+For a LAN Hermes Agent host with a local `hermes` CLI, route the same target
+through `hermes-cli`:
+
+```bash
+export XOB_AGENT_TARGETS='hermes=hermes-cli:XOB_HERMES'
+export XOB_HERMES_SSH_TARGET='ubuntu@192.168.110.30'
+export XOB_HERMES_SSH_KEY="$HOME/.ssh/xob_hermes_lan_ed25519"
+export XOB_HERMES_CLI_BIN='/usr/local/bin/hermes'
+export XOB_HERMES_ENABLE_COMMANDS=1
 ```
 
 For a same-host test:
 
 ```bash
-export XOB_AGENT_TARGETS='hermas=openclaw-cli:XOB_HERMAS'
-export XOB_HERMAS_SSH_TARGET='local'
+export XOB_AGENT_TARGETS='hermes=hermes-cli:XOB_HERMES'
+export XOB_HERMES_SSH_TARGET='local'
+export XOB_HERMES_CLI_BIN='hermes'
 ```
 
-The board-side `xob.default_target` can then be set to `openclaw`, `hermas`, or
-any other target name present in `XOB_AGENT_TARGETS`. A Hermas-specific adapter
-should be added only after its real API is known; until then this route only
-covers OpenClaw-compatible CLI/SSH targets.
+The board-side `xob.default_target` can then be set to `openclaw`, `hermes`, or
+any other target name present in `XOB_AGENT_TARGETS`. `openclaw-cli` covers
+OpenClaw-compatible CLI/SSH targets. `hermes-cli` covers a host-local Hermes
+Agent CLI by running `hermes -z <prompt>` over SSH.
+
+See `docs/PHASE3_HERMES_LAN_CLI.md` for the current LAN Hermes branch target.
 
 By default, the adapter does not forward user commands. It only verifies that the OpenClaw gateway is reachable:
 

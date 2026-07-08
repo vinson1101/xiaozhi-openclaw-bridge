@@ -21,7 +21,7 @@ GET /device/ws
 
 with a WebSocket upgrade request. The optional query parameter
 `target=<alias>` selects the backend route for audio-derived commands, matching
-the existing `fake` / `openclaw` / `hermas` alias model. It defaults to `fake`.
+the existing `fake` / `openclaw` / `hermes` alias model. It defaults to `fake`.
 The first supported text frame is:
 
 ```json

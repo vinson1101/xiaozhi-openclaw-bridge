@@ -26,11 +26,20 @@ import json
 import sys
 
 remote_command = sys.argv[-1]
+ssh_target = sys.argv[-2] if len(sys.argv) > 2 else ""
 if " health " in f" {remote_command} ":
     print(json.dumps({"ok": True, "status": "live"}))
 elif " agent " in f" {remote_command} ":
     text = "语音短答" if "语音输出要求" in remote_command else "龙虾收到：测试命令"
     print(json.dumps({"status": "ok", "result": {"payloads": [{"text": text}]}}))
+elif " -z " in f" {remote_command} ":
+    if ssh_target == "fake-hermes" and " --safe-mode " not in f" {remote_command} ":
+        print("missing --safe-mode", file=sys.stderr)
+        sys.exit(2)
+    if ssh_target == "fake-hermes" and " --toolsets safe " not in f" {remote_command} ":
+        print("missing --toolsets safe", file=sys.stderr)
+        sys.exit(2)
+    print("Hermes收到：测试命令")
 else:
     print("unexpected command", remote_command, file=sys.stderr)
     sys.exit(2)
@@ -77,12 +86,20 @@ else:
             os.environ.update(
                 {
                     "PATH": f"{tmp_path}:{old_env.get('PATH', '')}",
-                    "XOB_AGENT_TARGETS": "hermas=openclaw-cli:XOB_HERMAS",
-                    "XOB_HERMAS_SSH_TARGET": "local",
-                    "XOB_HERMAS_ENABLE_COMMANDS": "1",
+                    "XOB_AGENT_TARGETS": "hermes=hermes-cli:XOB_HERMES",
+                    "XOB_HERMES_SSH_BIN": str(fake_ssh),
+                    "XOB_HERMES_SSH_TARGET": "fake-hermes",
+                    "XOB_HERMES_CLI_BIN": "hermes",
+                    "XOB_HERMES_ENABLE_COMMANDS": "1",
+                    "XOB_HERMES_SAFE_MODE": "1",
+                    "XOB_HERMES_TOOLSETS": "safe",
                 }
             )
-            _run_command_smoke(tmp_path / "bridge-local.sqlite3", "hermas")
+            _run_command_smoke(
+                tmp_path / "bridge-hermes.sqlite3",
+                "hermes",
+                expected_text="Hermes收到：测试命令",
+            )
         finally:
             os.environ.clear()
             os.environ.update(old_env)

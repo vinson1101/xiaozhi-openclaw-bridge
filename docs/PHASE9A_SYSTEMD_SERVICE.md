@@ -60,7 +60,7 @@ python3 scripts/check_bridge_health.py http://<reachable-host>:8788
   operation through `scripts/rotate_device_credential.py`.
 - The generic `/command` route is disabled in the deploy unit. Public hosts
   should expose only `/healthz` and `/device/*`.
-- Keep OpenClaw, Hermas, Zebra, and provider secrets in host environment or
+- Keep OpenClaw, Hermes, Zebra, and provider secrets in host environment or
   service overrides, not in Git.
 
 ## Next

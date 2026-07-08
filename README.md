@@ -1,6 +1,6 @@
 # xiaozhi-openclaw-bridge
 
-Custom ESP32 voice terminal and bridge for OpenClaw, Hermas, and Zebra-backed agents.
+Custom ESP32 voice terminal and bridge for OpenClaw, Hermes, and Zebra-backed agents.
 
 ## 0. Project Positioning
 
@@ -86,7 +86,7 @@ Voice bridge service
         v
 Agent services
   OpenClaw
-  Hermas
+  Hermes
   Zebra session runtime
 ```
 
@@ -95,7 +95,7 @@ Agent services
 - Do not port Zebra into ESP32 firmware.
 - Do not vendor `memovai/mimiclaw` or `78/xiaozhi-esp32` source here by default.
 - Do not depend on the official Xiaozhi cloud path for the target product.
-- Keep OpenClaw, Hermas, and Zebra as server-side services.
+- Keep OpenClaw, Hermes, and Zebra as server-side services.
 - Use the board as an input/output device with small local state.
 - Keep flash backups, credentials, API keys, and personal runtime data out of Git.
 
@@ -116,7 +116,7 @@ Do not migrate Zebra's implementation into firmware.
 
 1. Text bridge: accept a text command and forward it to a backend.
 2. OpenClaw adapter: forward commands through a private SSH/CLI path.
-3. Agent adapter: normalize OpenClaw, Hermas, and Zebra session responses.
+3. Agent adapter: normalize OpenClaw, Hermes, and Zebra session responses.
 4. Firmware backup: keep a restorable copy of the stock board flash.
 5. Custom firmware skeleton: WiFi, secure config, display states, bridge hello.
 6. Voice loop: ASR command in, agent result out, TTS response back.

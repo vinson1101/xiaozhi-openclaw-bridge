@@ -35,7 +35,7 @@ The avatar switches to:
 
 ## Agent Routing
 
-The board does not load OpenClaw, Hermas, Zebra, or any other Agent runtime.
+The board does not load OpenClaw, Hermes, Zebra, or any other Agent runtime.
 It only stores a small `default_target` routing preference and sends that to the
 Bridge. The Bridge still owns backend selection and Agent execution.
 

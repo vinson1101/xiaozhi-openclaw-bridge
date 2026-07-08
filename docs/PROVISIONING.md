@@ -40,9 +40,10 @@ The implemented paths are USB serial provisioning and temporary AP provisioning.
 Both accept `bridge_url`, `device_token`, `default_target`, `wifi_ssid`, and
 `wifi_password`, then write only the `xob` namespace and reboot. If
 `default_target` is missing or empty, firmware falls back to `fake`.
-`default_target` is only a route name; the Bridge maps names such as `huntmind`,
-`openclaw`, or `hermas` to the actual backend for the current LAN or VPS
-environment.
+`default_target` is only a Bridge route name; the Bridge maps names such as
+`huntmind`, `openclaw`, or `hermes` to the actual backend for the current LAN or
+VPS environment. `huntmind` is an OpenClaw agent route. `hermes` is the Hermes
+route; the current remote Hermes persona/agent behind it is `xiaoyuan`.
 
 The AP form treats `default_target` as a free text value rather than a fixed
 WiFi choice. It is the agent/backend route, not a network SSID.
@@ -61,8 +62,9 @@ or `:setup` also enters the same AP plus serial provisioning flow. This is the
 fallback when physical button mapping is still under test.
 
 Typing `:target <name>` updates only `xob.default_target` and reboots. This is
-the preferred development path for switching between `fake`, `huntmind`, and
-future agent profiles without touching WiFi credentials or the device token.
+the preferred development path for switching between Bridge routes such as
+`fake`, `huntmind`, and `hermes` without touching WiFi credentials or the device
+token.
 
 The firmware keeps WiFi driver storage in RAM, then sets WiFi country to CN so 2.4 GHz channels 1-13 are scan/connect candidates. Diagnostic logs may report aggregate scan counts and target match counts, but must not print SSID values, WiFi passwords, device tokens, raw MAC addresses, or Bridge secrets.
 
