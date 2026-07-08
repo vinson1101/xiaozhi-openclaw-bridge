@@ -246,7 +246,7 @@ Tasks:
   synchronous Hermes CLI bring-up path.
 - [x] Run Hermes CLI through `--safe-mode --toolsets safe` for Bridge bring-up
   so voice commands like "检查链路" cannot recursively call the Bridge.
-- [ ] Configure the Hermes-branch Bridge deployment with the same real
+- [x] Configure the Hermes-branch Bridge deployment with the same real
   ASR/TTS/OPUS voice-chain environment as the validated OpenClaw Bridge.
 - [ ] Add Lobster adapter using the same `AgentRequest` / `AgentResponse` contract after its API/CLI shape is confirmed.
 - [ ] Prefer token or sentence streaming for Hermes/Lobster voice targets; synchronous full-text responses are acceptable only for bring-up.

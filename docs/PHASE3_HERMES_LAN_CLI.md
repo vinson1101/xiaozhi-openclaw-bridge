@@ -99,7 +99,7 @@ must not be stored in Git.
   board can wait for the current synchronous Hermes CLI response.
 - [x] Prevent Hermes CLI from recursively calling the Bridge during voice
   bring-up by running it with `--safe-mode --toolsets safe`.
-- [ ] Configure `xob-bridge-hermes.service` with the same real Bridge
+- [x] Configure `xob-bridge-hermes.service` with the same real Bridge
   ASR/TTS/OPUS voice-chain environment as the validated OpenClaw deployment.
 - [ ] Later: replace or supplement `hermes-cli` with a richer Hermes API only
   after the API contract is confirmed.
@@ -178,4 +178,24 @@ Validation:
   board serial text "检查链路，确认系统状态"
     -> board: device command status=200
     -> Bridge: target=hermes source=device elapsed_ms~=10700
+```
+
+Current deployment source and voice-chain check:
+
+```text
+192.168.110.30:/home/ubuntu/xiaozhi-openclaw-bridge
+  -> git checkout origin/codex/hermes-lan-ssh
+  -> commit ba42566
+
+xob-bridge-hermes.service
+  -> XOB_ASR_PROVIDER=bailian_paraformer_realtime
+  -> XOB_TTS_PROVIDER=bailian
+  -> XOB_BAILIAN_TTS_MODEL=cosyvoice-v3-flash
+  -> XOB_BAILIAN_TTS_VOICE=longyan_v3
+  -> XOB_WS_TTS_AUDIO_CODEC=opus
+
+WebSocket tts_debug
+  -> summary=bailian tts 8 chars model=cosyvoice-v3-flash voice=longyan_v3
+  -> tts_audio_frames=36
+  -> tts_audio_bytes=4320
 ```
