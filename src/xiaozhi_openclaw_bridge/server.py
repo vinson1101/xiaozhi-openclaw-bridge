@@ -13,7 +13,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -344,6 +344,7 @@ class BridgeApplication:
         target: str = "fake",
         audio_frames: tuple[bytes, ...] = (),
         frame_duration_ms: int = 20,
+        interim_sender: Callable[[dict[str, Any]], None] | None = None,
     ) -> tuple[int, list[dict[str, Any]]]:
         device_id = str(headers.get("device-id") or "").strip()
         target = target.strip() or "fake"
@@ -390,9 +391,8 @@ class BridgeApplication:
             f"text={_short_log_text(transcript.text)}",
             flush=True,
         )
-        messages: list[dict[str, Any]] = [
-            {"session_id": session_id, "type": "stt", "text": transcript.text}
-        ]
+        stt_message = {"session_id": session_id, "type": "stt", "text": transcript.text}
+        messages: list[dict[str, Any]] = [stt_message]
         if transcript.status != "done" or not transcript.text.strip():
             self.store.set_session_status(session_id, "error")
             messages.extend(_tts_messages(session_id, "我没听清。"))
@@ -400,6 +400,10 @@ class BridgeApplication:
         if _is_wake_only_transcript(transcript.text):
             messages.extend(_tts_messages(session_id, "我在。"))
             return 200, messages
+
+        if interim_sender is not None:
+            interim_sender(stt_message)
+            messages = []
 
         status, result = self._run_command(
             {
@@ -629,6 +633,7 @@ def build_server(
                                 target,
                                 audio_frames=audio_frames,
                                 frame_duration_ms=frame_duration_ms,
+                                interim_sender=lambda message: _write_ws_json(self.wfile, message),
                             )
                         sent_audio_frames = 0
                         sent_audio_bytes = 0
