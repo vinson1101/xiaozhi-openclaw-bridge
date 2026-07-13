@@ -247,6 +247,7 @@ class BridgeApplication:
         self,
         body: bytes,
         headers: Mapping[str, str],
+        target: str = "fake",
     ) -> tuple[int, dict[str, Any]]:
         payload, error = _parse_json(body)
         if error:
@@ -274,13 +275,18 @@ class BridgeApplication:
             firmware=str(payload.get("firmware") or "xiaozhi-websocket"),
             capabilities=["websocket", "audio_in", "audio_out"],
         )
-        session_id = self.store.create_session("device_ws")
+        target = target.strip() or "fake"
+        session_id = self.store.get_device_route_session(device_id, target)
+        if session_id is None:
+            session_id = self.store.create_session(target)
+        self.store.set_device_route_session(device_id, target, session_id)
         frame_duration = _audio_param_int(payload, "frame_duration", 60)
         self.store.append_event(
             session_id,
             "device.ws.hello",
             {
                 "device_id": device_id,
+                "target": target,
                 "transport": "websocket",
                 "version": payload.get("version"),
                 "client_id": str(headers.get("client-id") or ""),
@@ -547,14 +553,14 @@ def build_server(
                 if opcode != 1:
                     _write_ws_json(self.wfile, {"type": "error", "message": "expected text hello"})
                     return
-                status, payload = app.device_websocket_hello(body, headers)
+                target = _query_value(urlsplit(self.path).query, "target", "fake") or "fake"
+                status, payload = app.device_websocket_hello(body, headers, target)
                 _write_ws_json(self.wfile, payload)
                 print(f"GET /device/ws -> {101 if status == 200 else status}", flush=True)
                 if status != 200:
                     return
                 session_id = str(payload["session_id"])
                 frame_duration_ms = _positive_int(str(payload["audio_params"]["frame_duration"]), 20)
-                target = _query_value(urlsplit(self.path).query, "target", "fake") or "fake"
                 audio_chunks: list[bytes] = []
                 audio_bytes = 0
                 listen_mode = ""

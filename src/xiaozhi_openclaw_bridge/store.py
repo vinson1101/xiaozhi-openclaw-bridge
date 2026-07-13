@@ -54,6 +54,15 @@ class EventStore:
                     created_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS device_route_sessions (
+                    device_id TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(device_id, target),
+                    FOREIGN KEY(session_id) REFERENCES sessions(id)
+                );
                 """
             )
 
@@ -75,6 +84,31 @@ class EventStore:
             conn.execute(
                 "UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?",
                 (status, utc_now(), session_id),
+            )
+
+    def get_device_route_session(self, device_id: str, target: str) -> str | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT session_id
+                FROM device_route_sessions
+                WHERE device_id = ? AND target = ?
+                """,
+                (device_id, target),
+            ).fetchone()
+        return str(row["session_id"]) if row is not None else None
+
+    def set_device_route_session(self, device_id: str, target: str, session_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO device_route_sessions (device_id, target, session_id, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(device_id, target) DO UPDATE SET
+                    session_id = excluded.session_id,
+                    updated_at = excluded.updated_at
+                """,
+                (device_id, target, session_id, utc_now()),
             )
 
     def append_event(self, session_id: str, event_type: str, payload: dict[str, Any]) -> int:
