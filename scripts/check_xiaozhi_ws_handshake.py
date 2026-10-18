@@ -45,6 +45,8 @@ def main() -> None:
             host, port = server.server_address
             _wait_for_port(host, port)
             payload, turn_messages, audio_bytes = _websocket_session(host, port)
+            second_payload = _websocket_hello_only(host, port)
+            assert second_payload["session_id"] == payload["session_id"]
             assert payload["type"] == "hello"
             assert payload["transport"] == "websocket"
             assert payload["session_id"]
@@ -78,9 +80,10 @@ def main() -> None:
                     "backend.response",
                     "device.result",
                 )
-            ]
+            ] + ["device.ws.hello"]
             event = json.loads(events[0][1])
             assert event["transport"] == "websocket"
+            assert event["target"] == "fake"
             assert event["audio_params"]["format"] == "opus"
             assert len(turn_messages) == 2
             for messages in turn_messages:
@@ -260,7 +263,44 @@ def _websocket_session(host: str, port: int) -> tuple[dict[str, object], list[li
                     break
             turn_messages.append(messages)
         sock.sendall(_masked_frame(8, b""))
-    return hello_payload, turn_messages, audio_bytes
+        return hello_payload, turn_messages, audio_bytes
+
+
+def _websocket_hello_only(host: str, port: int) -> dict[str, object]:
+    key = base64.b64encode(os.urandom(16)).decode()
+    request = (
+        "GET /device/ws?target=fake HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Authorization: Bearer ws-token\r\n"
+        "Protocol-Version: 1\r\n"
+        "Device-Id: ws-device\r\n"
+        "Client-Id: ws-client\r\n"
+        "\r\n"
+    ).encode()
+    hello = {
+        "type": "hello",
+        "version": 1,
+        "features": {"mcp": True},
+        "transport": "websocket",
+        "audio_params": {
+            "format": "opus",
+            "sample_rate": 16000,
+            "channels": 1,
+            "frame_duration": 60,
+        },
+    }
+    with socket.create_connection((host, port), timeout=2) as sock:
+        sock.sendall(request)
+        response = _read_until(sock, b"\r\n\r\n")
+        assert b" 101 " in response, response.decode(errors="replace")
+        sock.sendall(_masked_json_frame(hello))
+        opcode, data = _read_frame(sock)
+        assert opcode == 1
+        return json.loads(data.decode())
 
 
 def _read_until(sock: socket.socket, marker: bytes) -> bytes:
