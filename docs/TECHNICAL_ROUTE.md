@@ -140,6 +140,36 @@ Bridge-managed persistent Hermes session + progress events
   当前为 180 秒，而不是音频帧级短超时。
 - 不新增 MQTT+UDP，除非后续确认 WebSocket 延迟或稳定性不够。
 
+#### Hugging Face `speech-to-speech` 借鉴边界
+
+参考快照：[huggingface/speech-to-speech@5b443c8](https://github.com/huggingface/speech-to-speech/tree/5b443c8011349f7b5a7138c2ad29fe1c1e65b8bd)
+及其 [Realtime Engine](https://github.com/huggingface/speech-to-speech/blob/5b443c8011349f7b5a7138c2ad29fe1c1e65b8bd/src/speech_to_speech/api/openai_realtime/README.md)。
+
+可直接借鉴：
+
+- 保持一条长生命周期 WebSocket，把音频和结构化控制事件放在同一 session；
+  `speech_started/stopped`、partial/final transcript、response start/done/cancel
+  可以映射到现有 XiaoZhi JSON 控制消息，音频继续走二进制 Opus frame。
+- WebSocket 读循环不能被 ASR -> Agent -> TTS 同步链路占住。耗时 turn 放到后台
+  worker，socket loop 持续接收 `abort`、新一轮 audio 和控制消息；控制事件优先于
+  待播放音频。
+- 每轮增加单调递增的 `generation`/`turn_id`。abort 或新语音开始时递增 generation、
+  取消活跃 Agent/TTS、清空服务端输出和板端播放队列，并丢弃旧 generation 的迟到
+  文本/音频，避免上一轮在下一轮继续播。
+- session 释放前排空输入、Agent、TTS 和事件队列；未排空的 session 不复用，防止
+  多设备或重连后串音。
+
+暂不采用：
+
+- 不把当前二进制 Opus WebSocket 改成 JSON/base64 PCM；后者带宽更大，并且会丢掉
+  已验证的 VB6824/小智 Opus 链路优势。
+- 不在 ESP32-C3 首版引入 WebRTC。上游 WebRTC 使用 48 kHz Opus、RTP、ICE 和
+  STUN/TURN，本项目还要转回 16 kHz/VB6824，复杂度大于当前收益。
+- 不采用 raw WebSocket/TCP 模式；上游也明确该模式缺少完整的中断、实时转写和
+  tool-call 事件。
+- 不迁移上游本地 VAD/STT/LLM/TTS 模型栈。当前 Bridge provider 和板端 endpointer
+  已工作；服务端 VAD、partial transcript 只在长连接和 generation cancel 稳定后评估。
+
 ### 2.4 Bridge 服务层
 
 技术选择：
@@ -159,6 +189,15 @@ Bridge 职责：
 - 生成短摘要记忆。
 - 调用 TTS。
 - 返回文本、UI 状态和音频。
+
+Bridge adapter 不负责选择 Hermes 的模型、Skill 或桌面权限，也不硬编码任何
+产品步骤。它只传递用户输入、会话标识、取消请求以及 Hermes 返回的状态和内容。
+当前 `XOB_HERMES_CLI_BIN` 指向主机本地的小元 harness。公司介绍、HiBrush 等
+受保护业务必须先由该 harness 根据当前语音或已有 session route 命中指定 Skill，
+预加载有限 toolsets，并在缺少 Skill 或路由含糊时 fail closed/要求澄清；不能只
+依赖 LLM 自己命中 Skill。Phase 3C 的常驻路径复用这份 harness route contract，
+再由 Hermes LLM 在已绑定 Skill 内理解具体任务和参数。既有 Skill、公司/产品
+介绍资产和 runner 不在本次升级范围内。
 
 面向“小元”多轮对话和产品展示时，Bridge 继续是设备侧唯一入口。每个来访者
 会话绑定三个标识：`device_session_id -> bridge_session_id -> hermes_session_id`。
@@ -186,9 +225,10 @@ audio 或 PCM/WAV，就新增 `XOB_TTS_PROVIDER=hermes` 一类的 `TtsProvider`�
 接受现有 interrupt / `tts stop` / fallback 状态机管理。
 
 当前同步 Hermes CLI 路线是第一轮连通性验证，不能作为产品展示的最终模型。
-Phase 3B 先实现逻辑上的持久 Hermes 会话和事件转发；设备 WebSocket 是否随之
+Phase 3B 已验证逻辑上的 Hermes session 复用；Phase 3C 改为常驻 broker、profile
+worker 和真实 Agent session 复用，并转发受支持的事件。设备 WebSocket 是否随之
 升级为长生命周期音频通道，应独立演进，不能改变既有的 listening、speaking、
-abort 交互 contract。
+abort 交互 contract。详见 `docs/PHASE3C_HERMES_PERSISTENT_BRIDGE.md`。
 
 ### 2.5 Agent 适配层
 
@@ -223,8 +263,9 @@ abort 交互 contract。
 1. Fake adapter：本地回声和测试。
 2. OpenClaw adapter：当前验证路径是 CLI 包装，`openclaw agent --agent huntmind --message ... --session-key ...`，服务端 Bridge 通过受限 wrapper 调用。
 3. Hermes adapter：第一轮 CLI 连通性已完成；当前采用 Hermes 支持的
-   `chat --quiet` 持久会话能力，由 Bridge 创建/恢复 Hermes session。事件流
-   只在 Hermes 暴露稳定接口后接入，不能靠解析交互式 CLI 输出模拟。
+   `chat --quiet` 完成逻辑会话复用。下一步新增常驻 Agent Bridge，复用 broker、
+   worker 和真实 Agent session；CLI 保留为 fallback。事件流只通过受支持接口
+   接入，不能靠解析交互式 CLI 输出模拟。
 4. Lobster adapter：按同一 `AgentRequest` / `AgentResponse` contract 接入；如果只提供同步文本，先可用但体验不会等同小智。要做到小智体验，需要支持 token 或句子级 streaming 输出，供 Bridge 边生成边送 TTS。
 5. Zebra adapter：创建/恢复 Zebra session，消费事件或轮询状态。
 

@@ -53,10 +53,14 @@ through `hermes-cli`:
 ```bash
 export XOB_AGENT_TARGETS='hermes=hermes-cli:XOB_HERMES'
 export XOB_HERMES_SSH_TARGET='example@192.0.2.10'
-export XOB_HERMES_SSH_KEY="$HOME/.ssh/hermes_example_ed25519"
+export XOB_HERMES_SSH_KEY='/absolute/path/to/hermes/key'
 export XOB_HERMES_CLI_BIN='/usr/local/bin/hermes'
 export XOB_HERMES_ENABLE_COMMANDS=1
 ```
+
+All connection values above are examples. Keep actual values in the ignored
+`.env`; see `docs/PHASE3_HERMES_LAN_CLI.md` for local loading and the private
+connection-record location.
 
 For a same-host test:
 

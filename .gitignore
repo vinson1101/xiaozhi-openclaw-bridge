@@ -1,5 +1,7 @@
 # Secrets and local runtime data
 .env
+.local/
+/deploy/hermes/*.env
 *.key
 *.pem
 *secret*

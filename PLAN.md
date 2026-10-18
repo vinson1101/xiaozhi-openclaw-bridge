@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- Project shell exists under `/Users/vinson/Projects/github/vinson1101/xiaozhi-openclaw-bridge`.
+- Project shell exists under `<workspace>/xiaozhi-openclaw-bridge`.
 - Git is initialized on `main`.
 - Basic design exists in `docs/DESIGN.md`.
 - Technical route exists in `docs/TECHNICAL_ROUTE.md`.
@@ -31,7 +31,7 @@
 - ST7789 LCD driver exists in `docs/PHASE6N_LCD_DRIVER.md`.
 - First custom firmware flash and avatar check exists in `docs/PHASE6O_FIRST_CUSTOM_FLASH.md`.
 - WiFi and Bridge status display exists in `docs/PHASE6P_BRIDGE_STATUS_DISPLAY.md`.
-- Local ESP-IDF `v5.3.5` is installed at `/Users/vinson/esp/esp-idf-v5.3.5`.
+- Local ESP-IDF `v5.3.5` is installed at `/path/to/esp-idf-v5.3.5` (example).
 - ESP-IDF build passed locally; `xob_esp32c3.bin` size is `0xfa390`, with 72% of the smallest app partition free.
 - GitHub firmware CI is deferred until the GitHub credential has `workflow` scope.
 - M5Stack reference boundary exists in `docs/M5STACK_REFERENCE.md`.
@@ -99,7 +99,7 @@
   persona.
 - Hermes/Lobster should be integrated as Agent adapters behind the Bridge, not as board-side runtimes or TTS providers. The XiaoZhi-like server role is the Bridge voice gateway: device protocol, ASR/VAD, Agent routing, TTS, playback state, interrupt, and audit.
 - LAN Hermes first integration path is the host-local Hermes Agent CLI on
-  `example@192.0.2.10`: `/usr/local/bin/hermes -z <prompt>` over SSH with a
+  `example@192.0.2.10` (example): `/usr/local/bin/hermes -z <prompt>` over SSH with a
   dedicated key. Docker dashboard/gateway discovery is not the Bridge adapter
   path for this phase.
 - Hermes native ASR/TTS does not replace the Bridge voice gateway. If it proves
@@ -220,8 +220,9 @@ Acceptance:
 
 ## Phase 3 - Hermes Adapter
 
-Goal: connect Bridge to the LAN-local Hermes Agent CLI while keeping OpenClaw,
-WiFi, TTS voices, voice packs, and agent targets runtime configurable.
+Goal: connect Bridge to the LAN-local Hermes Agent CLI while keeping Bridge a
+voice/session transport. Hermes owns its model, tools, skills, approvals, and
+desktop capabilities.
 
 Tasks:
 
@@ -237,15 +238,19 @@ Tasks:
 - [x] Temporarily switch the board to `:target hermes`, confirm the currently
   configured Bridge returns HTTP 400 for that target, then restore
   `:target huntmind`.
-- [x] Deploy this branch's Bridge on `example@192.0.2.10` as
+- [x] Deploy this branch's Bridge on the private Hermes host (example SSH target:
+  `example@192.0.2.10`) as
   `xob-bridge-hermes.service`, listening on `0.0.0.0:8788`, with
   `target=hermes` routed to the host-local `/usr/local/bin/hermes`.
-- [x] Point the board at `http://192.0.2.10:8788` and set
+- [x] Point the board at its configured Hermes Bridge (example:
+  `http://192.0.2.10:8788`) and set
   `xob.default_target=hermes` for full board-to-Hermes testing.
 - [x] Increase firmware `/device/command` timeout to 30 seconds for the current
   synchronous Hermes CLI bring-up path.
-- [x] Run Hermes CLI through `--safe-mode --toolsets safe` for Bridge bring-up
-  so voice commands like "检查链路" cannot recursively call the Bridge.
+- [x] Retire the bring-up-only `--safe-mode`, `--toolsets`, and `--skills`
+  injection from the Bridge adapter. The host-local Hermes launcher now owns
+  intent/session Skill preload and bounded tool selection as part of the
+  Xiaoyuan harness.
 - [x] Configure the Hermes-branch Bridge deployment with the same real
   ASR/TTS/OPUS voice-chain environment as the validated OpenClaw Bridge.
 - [ ] Add Lobster adapter using the same `AgentRequest` / `AgentResponse` contract after its API/CLI shape is confirmed.
@@ -258,10 +263,14 @@ Acceptance:
 - See `docs/PHASE3_HERMES_LAN_CLI.md` for this branch's Hermes LAN task list
   and validation evidence.
 
-## Phase 3B - Persistent Hermes Demo Session
+## Phase 3B - Logical Hermes Session Baseline
 
-Goal: support Xiaoyuan's multi-turn dialogue and product demonstrations while
-keeping Bridge as the board-facing voice gateway.
+Goal: validate Xiaoyuan's multi-turn semantics over Hermes' supported CLI
+session surface while keeping Bridge as the board-facing voice gateway.
+
+Status: logical Hermes session reuse is validated on the CLI compatibility
+path. Per-turn process removal, supported event transport, and cancellation move
+to Phase 3C; the existing Hermes Skills and product chains remain unchanged.
 
 Tasks:
 
@@ -270,23 +279,118 @@ Tasks:
 - [x] Map Bridge sessions to reusable Hermes sessions by creating the first
   Hermes chat turn, reading `session_id: ...`, then renaming the Hermes session
   to the Bridge session key for later `--continue`.
-- [ ] Add a real Hermes event/progress interface if one is exposed; do not
-  scrape interactive CLI output to fake streaming.
-- [ ] Forward started, speakable text, tool progress, final, approval, error,
-  and cancellation events through the Bridge.
-- [ ] Preserve the current Bridge ASR/TTS/OPUS route for the first validation.
-- [ ] Make board abort stop TTS and cancel the active Hermes run without
-  discarding completed conversation context.
-- [ ] Validate three related spoken turns, a product-demo progress update, and
-  an interrupt followed by a new usable turn.
+- [x] Keep product routing out of the Bridge adapter; forward the prompt and
+  session key to a host-local Hermes harness that preloads the required Skill
+  with official `--skills` support and fails closed when it is missing.
+- [x] Provide the host-local Hermes process with the active graphical-session
+  environment so Hermes Computer Use can operate the visible desktop.
+- [x] Validate the corrected HiBrush product harness on the real Bridge
+  session: MiniMax-M3 interprets subject/template/prompt semantics, while the
+  runner performs actual HiBrush operations. Prompt mode prepared an LLM-written
+  portrait prompt in 25.802 seconds; matching-template mode searched `人像`
+  then `女性` and selected `/templates/prompt-523` in 46.668 seconds; a later
+  different-template request selected `/templates/prompt-1027` in 36.386
+  seconds. All three board-equivalent voice turns stayed under 90 seconds and
+  submitted no generation task.
+- [x] Preserve the current Bridge ASR/TTS/OPUS route during logical session
+  validation.
+- Product-grade process persistence, events, cancellation, semantic Skill
+  selection, and latency acceptance are tracked only in Phase 3C.
 
 Acceptance:
 
-- Xiaoyuan resolves references to earlier visitor turns in one session.
-- A long-running product demonstration produces a timely spoken progress or
-  completion update instead of a silent synchronous wait.
-- Native Hermes microphone/speaker mode is not required for the board path.
+- Bridge can reuse a stable Hermes session key across related turns.
+- Xiaoyuan resolves a follow-up such as selecting a different template from the
+  prior turn without submitting a real generation task.
+- This phase does not claim process persistence or a supported event stream.
 - See `docs/PHASE3_HERMES_LAN_CLI.md` for the decision and detailed boundary.
+
+## Phase 3C - Persistent Hermes Agent Bridge
+
+Goal: remove per-turn Hermes CLI startup cost while preserving the current
+voice route and every existing server-side Skill, company/product introduction,
+media asset, harness/launcher chain, runner, persona, and approval policy.
+
+Execution priority (updated 2026-10-18 after comparison with
+[`78/xiaozhi-esp32@e0d2390`](https://github.com/78/xiaozhi-esp32/tree/e0d2390a1ca415473508bbc0c66eaf1d8dc04e37)):
+
+- [ ] **P0:** Gate 0 read-only baseline: hashes and effective calling contracts
+  for existing Skills, company introductions, HiBrush harness/launcher, runners,
+  and configuration, plus segmented cold/warm latency. No business-chain edits.
+- [ ] **P1.1:** Separate socket reception from background ASR/Agent/TTS work;
+  same-WebSocket abort must be handled while the Agent is still thinking.
+- [ ] **P1.2:** Reuse existing playback buffers; add bounded queues/backpressure,
+  playback generation guards, and drained events. Verify ten consecutive aborts
+  produce no stale-turn playback or growing queues; normal auto listening waits
+  for actual playback completion, including in-flight decode/output.
+- [ ] **P1.3:** Complete persistent Hermes Gates 1–3 and wire cancellation into
+  P1.1/P1.2. Ten warm turns must reuse the runtime with identical harness routing,
+  Skill preload, toolsets, session affinity, and execution contracts.
+- [ ] **P2.1:** Stream speakable Agent segments through TTS and incremental Opus;
+  first audio must precede full-answer completion. Evaluate live ASR afterwards;
+  partial transcripts must not execute business tasks.
+- [ ] **P2.2 — before public-network enablement:** Add board WSS/TLS and connection
+  recovery, verify certificate validation, reject invalid certificates, and never
+  fall back to plaintext. Current board WebSocket accepts only HTTP Bridge URLs;
+  nginx TLS alone does not complete this path.
+- **P3 — deferred:** Reassess upstream firmware reuse/device MCP on a board change
+  or concrete device-control need. No current MQTT+UDP, AEC/full-duplex, broad
+  board-porting, or whole-firmware replacement work. Upstream IDF 6.x cannot be
+  mixed directly into this project's documented IDF 5.3.5 build baseline.
+
+Priority order controls implementation; Gates 0–5 below retain their interface,
+business-regression, and cutover checks. Existing server harness phrases/aliases,
+routes, Skill preload, toolsets, session bindings, and runners stay unchanged.
+If a persistent interface requires changing that chain, reject that integration
+option and report the incompatibility while retaining the current path.
+Protected configuration means existing Hermes business-chain configuration;
+new Bridge/transport configuration must be kept separate without overwriting it.
+
+Tasks:
+
+- [ ] Record read-only before/after inventories, hashes, and calling contracts
+  for protected Hermes Skills, product-introduction assets, existing harness/
+  launcher, runners, and configuration; stop if they change.
+- [ ] Benchmark the current CLI path by separating process startup, first Agent
+  event, final result, and first TTS audio latency.
+- [ ] Confirm a supported long-lived Hermes interface and its license/stability
+  boundary; do not scrape interactive CLI output.
+- [ ] Preserve the existing host-local harness unchanged as the required routing
+  gate for company-introduction and HiBrush intents; adapt the new persistent
+  interface around its current Skill preload, toolsets, and session affinity.
+- [ ] Add a long-lived broker/profile-worker/Agent-session path and prove ten
+  warm turns reuse one broker instead of spawning `hermes chat` per turn.
+- [ ] Add a configurable `hermes-bridge` adapter while preserving `hermes-cli`
+  as an explicit fallback.
+- [ ] Keep product rules out of firmware and the Bridge adapter. The host-local
+  harness guarantees protected Skill selection; Hermes/LLM interprets the
+  concrete task and parameters inside that loaded Skill contract, and the
+  existing Skill/runner safety contract still owns execution.
+- [ ] Forward started, speakable, tool progress, approval, clarify, final,
+  error, and cancelled events through Bridge with stable turn/generation IDs;
+  discard stale output after abort or a newer turn starts.
+- [ ] Make board abort stop TTS and cancel only the active Hermes run while
+  clearing that turn's queued output and retaining completed conversation context.
+- [ ] Validate canonical phrases, approved harness aliases, three-turn route
+  affinity, HiBrush prepare-only, and an approved company-introduction read/play
+  path without modifying their server-side implementations.
+- [ ] Compare protected-file hashes after validation, then cut over by config
+  only if the warm path beats the CLI baseline and rollback remains available.
+
+Acceptance:
+
+- Warm turns reuse a persistent Hermes Agent runtime and do not spawn a new CLI
+  process per request.
+- The host-local harness deterministically selects protected business Skills;
+  LLM semantic understanding operates inside the selected Skill contract, while
+  ambiguous or side-effecting tasks still require clarification or approval.
+- Existing Hermes Skills, company/product introduction assets, harness/launcher,
+  runners, and configuration are byte-for-byte unchanged across the upgrade,
+  with identical business routing and calling contracts.
+- CLI fallback, progress, interruption, session continuity, and no-duplicate
+  side-effect behavior are all verified.
+- See `docs/PHASE3C_HERMES_PERSISTENT_BRIDGE.md` for the upgraded taskbook,
+  gates, metrics, and explicit non-goals.
 
 ## Phase 4 - Device Protocol And Simulator
 
@@ -488,12 +592,12 @@ Acceptance:
 
 ## Next Task
 
-Start Phase 3B against the reachable Bridge host. The current board-to-Bridge
-voice loop and the first-round Hermes CLI route are proven, but the synchronous
-CLI process cannot deliver multi-turn Xiaoyuan dialogue or in-task product-demo
-updates. Keep Bridge's existing ASR/TTS/OPUS and board state machine intact;
-first verify a supported persistent Hermes session/event interface, then
-implement the session mapping and event translation. Do not divert this phase
-into Hermes host-native microphone/speaker work.
+Start Phase 3C P0 / Gate 0: record read-only protected-file hashes, current
+harness/launcher calling contracts, and a segmented CLI latency baseline. Next
+implement P1.1 socket/turn separation and P1.2 generation/drained-queue handling,
+then complete P1.3 persistent Hermes integration against that cancellation path.
+Existing server Skills, company introductions, and HiBrush harness/runner chains
+stay unchanged throughout. Gate 0 does not deploy, restart, or run real product
+side effects; keep the current CLI path until separate cutover checks pass.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

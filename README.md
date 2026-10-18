@@ -18,6 +18,7 @@ Project documents:
 - [docs/PHASE1_TEXT_BRIDGE.md](docs/PHASE1_TEXT_BRIDGE.md): text bridge MVP
 - [docs/PHASE2_OPENCLAW_ADAPTER.md](docs/PHASE2_OPENCLAW_ADAPTER.md): OpenClaw SSH adapter
 - [docs/PHASE3_HERMES_LAN_CLI.md](docs/PHASE3_HERMES_LAN_CLI.md): Hermes first-round CLI route and persistent-session follow-up
+- [docs/PHASE3C_HERMES_PERSISTENT_BRIDGE.md](docs/PHASE3C_HERMES_PERSISTENT_BRIDGE.md): Hermes branch v2 taskbook for a persistent Agent Bridge without changing server Skills or product assets
 - [docs/PHASE4_DEVICE_HTTP.md](docs/PHASE4_DEVICE_HTTP.md): device HTTP simulator
 - [docs/PHASE4B_DEVICE_PAIRING.md](docs/PHASE4B_DEVICE_PAIRING.md): durable device pairing
 - [docs/PHASE5_HARDWARE_RECON.md](docs/PHASE5_HARDWARE_RECON.md): hardware recon before firmware
