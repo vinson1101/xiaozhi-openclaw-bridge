@@ -2,7 +2,7 @@
 
 ## 0. 项目定位
 
-本项目把一块小智形态的 ESP32 语音设备，改造成私有的语音终端，用来连接 OpenClaw、Hermas 和 Zebra 支撑的服务端 Agent。
+本项目把一块小智形态的 ESP32 语音设备，改造成私有的语音终端，用来连接 OpenClaw、Hermes 和 Zebra 支撑的服务端 Agent。
 
 产品参考方向是桌面上的 Agent 硬件入口：可看、可按、可听、可反馈，
 把服务器侧 Agent 能力延伸到桌面，而不是在板端运行完整 Agent。
@@ -34,7 +34,7 @@ Bridge 服务
         v
 Agent 后端
   OpenClaw
-  Hermas
+  Hermes
   Zebra runtime
 ```
 
@@ -42,20 +42,23 @@ Agent 后端
 
 ## 2. 目标
 
-- 通过语音向局域网或 VPS 上的 OpenClaw / Hermas 下达指令。
+- 通过语音向局域网或 VPS 上的 OpenClaw / Hermes 下达指令。
 - 不通过官方小智服务。
 - 支持自定义屏幕 UI，重点参考 M5Stack Avatar / StackChan 那种有生命感的动态眼睛。
 - 语音人格名使用“小元”；MVP 暂时保留板上默认 `你好小智` 唤醒词，等拿到 VB6824 语音包授权码后再切到 `你好，小元`。
 - 支持自定义提示音、唤醒音、错误音、固定语音包和服务端选择的 TTS 音色。
 - 固定语音包用于唤醒、确认、打断、错误、配置等常用短句，可一次生成后缓存播放。
-- 动态 TTS 只用于 Agent 每次生成的回答。Bridge 侧首选用已有 MiniMax TTS 接口做第一版 provider，通过 `XOB_TTS_PROVIDER=minimax` 和同一把 OpenClaw MiniMax key 显式启用；普通生硬 TTS 只能作为临时 fallback。
+- 动态 TTS 只用于 Agent 每次生成的回答。Bridge 侧通过 `XOB_TTS_PROVIDER`
+  选择 provider；MiniMax、Bailian/DashScope、Hermes 原生 TTS 都可以作为
+  provider 候选，但必须由 Bridge 统一负责分句、缓存、OPUS packetization、
+  播放状态和 interrupt。普通生硬 TTS 只能作为临时 fallback。
 - 本地具备基础上下文和记忆管理。
 - 服务端 Agent 架构可以适当迁移 Zebra 的关键模块。
 - 先适配当前 ESP32-C3 板；如果硬件资源不够，再切 ESP32-S3 + PSRAM。
 
 ## 3. 非目标
 
-- 不把完整 OpenClaw、Hermas 或 Zebra 塞进 ESP32-C3。
+- 不把完整 OpenClaw、Hermes 或 Zebra 塞进 ESP32-C3。
 - 不在 ESP32-C3 上做离线 ASR / TTS。
 - 不把 API key、VPS token、flash 备份、私人记忆提交到 Git。
 - 不默认 vendor `mimiclaw`、`xiaozhi-esp32` 或 Zebra 源码。
@@ -100,7 +103,7 @@ Agent 后端
 板端本地状态保持很小：
 
 - device id
-- 默认后端：OpenClaw / Hermas / Zebra
+- 默认后端：OpenClaw / Hermes / Zebra
 - 最近连接状态
 - 最近几条指令摘要
 - UI 状态
@@ -169,6 +172,15 @@ Agent 后端
 - 板端播放固定语音包、TTS 和短提示音。
 - 离线唤醒词只有在确认 CPU/内存余量后再加。
 
+TTS 技术方案可以调整，但必须先满足设计边界：
+
+- `AgentAdapter` 只负责拿到回复内容；`TtsProvider` 负责把要朗读的文本合成音频。
+- Hermes 如果直接提供 TTS 音频，应接成 `XOB_TTS_PROVIDER=hermes` 一类的
+  Bridge provider，而不是替代 Bridge voice gateway。
+- Hermes TTS 必须证明可返回 Bridge 能处理的 streaming audio 或 PCM/WAV，
+  并能进入现有 OPUS 下发和板端播放队列。
+- 中键打断、TTS stop、连续对话和错误 fallback 仍由 Bridge/固件状态机处理。
+
 ## 7. Bridge 服务设计
 
 Bridge 是产品核心。
@@ -179,7 +191,7 @@ Bridge 是产品核心。
 - 使用配对 token 鉴权设备。
 - 接收音频片段或文本指令。
 - 调用 ASR。
-- 路由到 OpenClaw、Hermas 或 Zebra。
+- 路由到 OpenClaw、Hermes 或 Zebra。
 - 记录 session event 和本地摘要记忆。
 - 调用 TTS。
 - 把 UI 事件和音频返回给设备。
@@ -192,7 +204,7 @@ Bridge 是产品核心。
 - 局域网开发：可以先用 `ws://`。
 - VPS：必须用 `wss://`，放在反向代理后面。
 
-不要把 OpenClaw 或 Hermas 直接暴露到公网。公网只暴露 Bridge，再由 Bridge 访问内部 Agent 服务。
+不要把 OpenClaw 或 Hermes 直接暴露到公网。公网只暴露 Bridge，再由 Bridge 访问内部 Agent 服务。
 
 ## 8. Agent 后端适配
 
@@ -202,7 +214,7 @@ Bridge 对后端使用统一请求：
 {
   "session_id": "string",
   "user_text": "string",
-  "target": "openclaw|hermas|zebra",
+  "target": "openclaw|hermes|zebra",
   "context": {
     "device_id": "string",
     "location": "lan|vps",
@@ -227,7 +239,7 @@ Bridge 对后端使用统一请求：
 - OpenClaw adapter：优先调用已有 HTTP 入口；没有稳定 HTTP 时用 CLI 包一层。
 - 当前已验证 OpenClaw CLI agent 入口可以直接调用 `huntmind`，并通过
   `--session-key` 保持会话连续性；飞书和 Telegram 是 channel，不是唯一入口。
-- Hermas adapter：先按同一 contract 预留，等确认真实 API 后实现。
+- Hermes adapter：先按同一 contract 预留，等确认真实 API 后实现。
 - Zebra adapter：创建或恢复 Zebra session，把状态流转回 Bridge。
 
 ## 9. 可迁移的 Zebra 模块
@@ -260,7 +272,7 @@ artifacts
 
 1. 板端记忆：NVS 里的设备配置、最近状态、少量指令摘要。
 2. Bridge 记忆：session events、压缩摘要、设备偏好、用户偏好。
-3. Agent 记忆：OpenClaw / Hermas / Zebra 自己的长期记忆。
+3. Agent 记忆：OpenClaw / Hermes / Zebra 自己的长期记忆。
 
 MimiClaw 的价值是参考本地文件式记忆和 skill 思路，但当前 ESP32-C3 不应承载完整 MimiClaw 记忆系统。
 
@@ -269,13 +281,13 @@ MimiClaw 的价值是参考本地文件式记忆和 skill 思路，但当前 ESP
 局域网模式：
 
 ```text
-board -> http://bridge.local:8788 -> local OpenClaw/Hermas/Zebra
+board -> http://bridge.local:8788 -> local OpenClaw/Hermes/Zebra
 ```
 
 VPS 模式：
 
 ```text
-board -> https://voice.example.com -> VPS Bridge -> OpenClaw/Hermas/Zebra
+board -> https://voice.example.com -> VPS Bridge -> OpenClaw/Hermes/Zebra
 ```
 
 没有局域网 Agent 时，VPS 模式完全可行。板端只需要能出网。
@@ -288,7 +300,7 @@ board -> https://voice.example.com -> VPS Bridge -> OpenClaw/Hermas/Zebra
 4. 设备模拟器：HTTP JSON 发送 hello 和文本命令。
 5. 自有固件骨架：WiFi、配对、Bridge hello、屏幕状态。
 6. OpenClaw adapter。
-7. Hermas adapter。
+7. Hermes adapter。
 8. 音频链路：录音、ASR、路由、TTS、播放。
 9. Zebra runtime adapter。
 10. 固件打磨：UI、提示音、设置、断线重连。
@@ -299,7 +311,7 @@ board -> https://voice.example.com -> VPS Bridge -> OpenClaw/Hermas/Zebra
 - ESP32-C3 内存对音频流加 UI 可能偏紧。
 - 刷机前必须有可恢复的完整 flash 备份。
 - VPS 模式必须有 TLS 和配对机制，不能裸 HTTP 暴露。
-- OpenClaw / Hermas 需要稳定服务 API，否则语音体验会不稳定。
+- OpenClaw / Hermes 需要稳定服务 API，否则语音体验会不稳定。
 
 ## 14. 第一个验收 Demo
 

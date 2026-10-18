@@ -40,12 +40,12 @@ class OpenClawConfig:
     command_timeout: int
 
     @classmethod
-    def from_env(cls, env_prefix: str = "XOB_OPENCLAW") -> "OpenClawConfig":
+    def from_env(cls, env_prefix: str = "XOB_OPENCLAW", default_cli_bin: str = "openclaw") -> "OpenClawConfig":
         return cls(
             env_prefix=env_prefix,
             ssh_target=os.environ.get(f"{env_prefix}_SSH_TARGET", "").strip(),
             ssh_bin=os.environ.get(f"{env_prefix}_SSH_BIN", "ssh").strip() or "ssh",
-            cli_bin=os.environ.get(f"{env_prefix}_CLI_BIN", "openclaw").strip() or "openclaw",
+            cli_bin=os.environ.get(f"{env_prefix}_CLI_BIN", default_cli_bin).strip() or default_cli_bin,
             ssh_key=_blank_to_none(os.environ.get(f"{env_prefix}_SSH_KEY")),
             known_hosts=_blank_to_none(os.environ.get(f"{env_prefix}_SSH_KNOWN_HOSTS")),
             agent=_blank_to_none(os.environ.get(f"{env_prefix}_AGENT")),
@@ -218,6 +218,134 @@ class OpenClawSshAdapter:
         return result
 
 
+class HermesCliAdapter:
+    target = "hermes"
+
+    def __init__(self, config: OpenClawConfig | None = None, target_name: str = "hermes") -> None:
+        self.config = config or OpenClawConfig.from_env("XOB_HERMES", default_cli_bin="hermes")
+        self.target_name = target_name
+        self.safe_mode = _truthy(os.environ.get(f"{self.config.env_prefix}_SAFE_MODE"))
+        self.toolsets = os.environ.get(f"{self.config.env_prefix}_TOOLSETS", "").strip()
+
+    def run(self, request: AgentRequest) -> AgentResponse:
+        if not self.config.ssh_target:
+            return AgentResponse(
+                status="error",
+                text=f"{self.target_name} 未配置：请设置 {self.config.env_prefix}_SSH_TARGET，或用 local 在本机执行。",
+                summary=f"missing {self.config.env_prefix}_SSH_TARGET",
+                artifacts=[],
+            )
+        if not self.config.enable_commands:
+            return self._health_only()
+        return self._oneshot(request)
+
+    def _health_only(self) -> AgentResponse:
+        result = self._run_hermes(["--version"], timeout=15)
+        if result.returncode != 0:
+            return _process_error_response("Hermes CLI health 检查失败", result)
+        return AgentResponse(
+            status="done",
+            text=f"{self.target_name} CLI 可达。命令转发未开启。",
+            summary=f"{self.target_name} cli reachable",
+            artifacts=[],
+        )
+
+    def _oneshot(self, request: AgentRequest) -> AgentResponse:
+        prompt = request.user_text
+        if request.context.get("mode") == "voice":
+            prompt = (
+                f"{request.user_text}\n\n"
+                "【语音输出要求】请只返回要朗读的中文口语内容：一到两句话，80字以内；"
+                "不要 Markdown、编号、列表、代码块、表情符号或解释格式要求。"
+            )
+        args = ["-z", prompt]
+        if self.toolsets:
+            args[:0] = ["--toolsets", self.toolsets]
+        if self.safe_mode:
+            args.insert(0, "--safe-mode")
+        result = self._run_hermes(args, timeout=self.config.command_timeout + 15)
+        if result.returncode != 0:
+            return _process_error_response("Hermes CLI 调用失败", result)
+        text = result.stdout.strip()
+        return AgentResponse(
+            status="done" if text else "error",
+            text=text or "Hermes 没有返回内容。",
+            summary=f"{self.target_name} oneshot",
+            artifacts=[{"type": "hermes_cli", "target": self.target_name}],
+        )
+
+    def _run_hermes(self, args: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+        started_at = time.monotonic()
+        verb = args[0] if args else "unknown"
+        if self.config.ssh_target == "local":
+            argv = [self.config.cli_bin, *args]
+            try:
+                result = subprocess.run(
+                    argv,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                result = subprocess.CompletedProcess(
+                    argv,
+                    124,
+                    stdout=_coerce_text(exc.stdout),
+                    stderr=_coerce_text(exc.stderr) + "\ncommand timed out",
+                )
+            print(
+                "hermes cli "
+                f"target={self.target_name} mode=local verb={verb} "
+                f"returncode={result.returncode} elapsed_ms={int((time.monotonic() - started_at) * 1000)}",
+                flush=True,
+            )
+            return result
+
+        argv = [
+            self.config.ssh_bin,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            f"ConnectTimeout={self.config.connect_timeout}",
+        ]
+        if self.config.known_hosts:
+            argv.extend(
+                [
+                    "-o",
+                    f"UserKnownHostsFile={self.config.known_hosts}",
+                    "-o",
+                    "StrictHostKeyChecking=yes",
+                ]
+            )
+        if self.config.ssh_key:
+            argv.extend(["-i", self.config.ssh_key])
+        remote_command = " ".join(shlex.quote(part) for part in [self.config.cli_bin, *args])
+        argv.extend([self.config.ssh_target, remote_command])
+        try:
+            result = subprocess.run(
+                argv,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            result = subprocess.CompletedProcess(
+                argv,
+                124,
+                stdout=_coerce_text(exc.stdout),
+                stderr=_coerce_text(exc.stderr) + "\ncommand timed out",
+            )
+        print(
+            "hermes cli "
+            f"target={self.target_name} mode=ssh verb={verb} "
+            f"returncode={result.returncode} elapsed_ms={int((time.monotonic() - started_at) * 1000)}",
+            flush=True,
+        )
+        return result
+
+
 def adapter_for(target: str) -> Any:
     route = _agent_routes().get(target)
     if route is None:
@@ -227,6 +355,8 @@ def adapter_for(target: str) -> Any:
         return FakeAdapter()
     if kind in {"openclaw", "openclaw-cli"}:
         return OpenClawSshAdapter(OpenClawConfig.from_env(env_prefix), target_name=target)
+    if kind in {"hermes", "hermes-cli"}:
+        return HermesCliAdapter(OpenClawConfig.from_env(env_prefix, default_cli_bin="hermes"), target_name=target)
     raise ValueError(f"unsupported adapter kind for {target}: {kind}")
 
 

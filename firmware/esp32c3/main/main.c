@@ -140,6 +140,7 @@ static char avatar_output_text[320] = "";
 #define XOB_WS_MESSAGE_FALLBACK_BUFFER_BYTES 4096
 #define XOB_WS_TTS_MAX_FRAMES 2048
 #define XOB_BUTTON_LISTEN_COOLDOWN_MS 250
+#define XOB_DEVICE_COMMAND_TIMEOUT_MS 30000
 #define XOB_OPUS_SAMPLE_RATE 16000
 #define XOB_OPUS_CHANNELS 1
 #define XOB_OPUS_MAX_FRAME_MS 60
@@ -720,7 +721,7 @@ static esp_err_t post_device_command(const app_config_t *config, const char *tex
     esp_http_client_config_t http_config = {
         .url = url,
         .method = HTTP_METHOD_POST,
-        .timeout_ms = 10000,
+        .timeout_ms = XOB_DEVICE_COMMAND_TIMEOUT_MS,
     };
     esp_http_client_handle_t client = esp_http_client_init(&http_config);
     if (client == NULL) {
