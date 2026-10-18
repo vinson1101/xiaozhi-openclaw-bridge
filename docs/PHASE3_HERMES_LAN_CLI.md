@@ -1,12 +1,27 @@
 # Phase 3 Hermes LAN CLI Adapter
 
-This branch connects the Bridge to the LAN-local Hermes Agent CLI without
-changing the existing OpenClaw route.
+This document records the completed first-round connection from the Bridge to
+the LAN-local Hermes Agent CLI. It does not change the existing OpenClaw route.
 
 Primary work in this branch should stay in the Bridge adapter and Hermes CLI
 integration path. Firmware work is limited to configurable target selection and
 the command timeout needed for the synchronous Hermes CLI bring-up route, not
 embedding a Hermes host, voice, or agent constant.
+
+## Status
+
+The synchronous CLI route is complete as a connectivity baseline: a board turn
+can reach the `xiaoyuan` / `小元` persona and return through the existing Bridge
+ASR/TTS/OPUS path. It is not the final product-demo architecture because a
+single `hermes chat` invocation cannot preserve a live visitor conversation or
+report progress while a Skill is running.
+
+Phase 3B now keeps Bridge as the device voice gateway and replaces the
+per-turn Hermes process with Bridge-managed Hermes chat sessions. The live
+Hermes CLI supports non-interactive `chat --quiet`, `--resume <session_id>`,
+and `--continue <title>`. It does not expose a stable progress-event stream in
+the CLI help, so progress/approval event forwarding remains a separate follow-up
+instead of being faked by scraping interactive output.
 
 ## Goal
 
@@ -69,8 +84,9 @@ must not be stored in Git.
   is designed and validated as a configurable Bridge `TtsProvider` whose output
   still goes through Bridge segmentation, OPUS packetization, playback state,
   interrupt, and fallback handling.
-- Do not add a streaming/session-rich Hermes API adapter until the real API
-  surface is chosen. `hermes-cli` is a synchronous bring-up route.
+- This first round does not add a persistent Hermes session or progress-event
+  adapter. That work belongs to Phase 3B and must use a supported Hermes
+  session/event surface rather than parsing interactive CLI output.
 
 ## Tasks
 
@@ -199,3 +215,44 @@ WebSocket tts_debug
   -> tts_audio_frames=36
   -> tts_audio_bytes=4320
 ```
+
+## Phase 3B - Persistent Hermes Demo Session
+
+### Decision
+
+Keep Bridge as the board-facing voice gateway. It continues to own device
+authentication, ASR, TTS, OPUS packetization, playback state, interrupt, and
+audit. Hermes becomes one persistent conversation per visitor, rather than one
+CLI process per spoken turn. Hermes native microphone/speaker mode remains a
+host-debug feature, not the board integration path.
+
+```text
+XiaoZhi board
+  <-> Bridge voice session
+  <-> persistent Hermes session for xiaoyuan
+```
+
+### Scope
+
+1. Use Hermes' supported persistent chat interface. First turn creates a Hermes
+   session and returns `session_id: ...`; Bridge renames that session to its
+   stable Bridge session key. Later turns use `--continue <Bridge session key>`.
+2. Keep the mapping in Bridge-owned identifiers and backend artifacts:
+   `device_session_id -> bridge_session_id -> hermes_session_key`.
+3. Do not emulate progress by scraping interactive CLI output. Add event
+   forwarding only when Hermes exposes a supported event/API surface.
+4. Translate only the events needed for the demo: started, speakable text,
+   tool progress, final result, approval, error, and cancellation.
+5. Keep the existing Bridge ASR/TTS/OPUS providers for the first Phase 3B
+   validation. Hermes-native STT/TTS is not required.
+6. Route board `abort` to both TTS stop and the active Hermes run, while
+   retaining completed conversation context for the next turn.
+
+### Acceptance
+
+- A visitor can ask three related questions, including a reference such as
+  "刚才那个产品", and Xiaoyuan answers from the same Hermes conversation.
+- During a product-demo Skill, the board announces work has started and at
+  least one progress or completion event before returning to listening.
+- A board interrupt stops speech, cancels the active task, and a new spoken
+  turn remains usable without creating a duplicate visitor session.

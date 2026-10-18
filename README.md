@@ -17,6 +17,7 @@ Project documents:
 - [docs/PHASE0_HARDWARE.md](docs/PHASE0_HARDWARE.md): public hardware baseline
 - [docs/PHASE1_TEXT_BRIDGE.md](docs/PHASE1_TEXT_BRIDGE.md): text bridge MVP
 - [docs/PHASE2_OPENCLAW_ADAPTER.md](docs/PHASE2_OPENCLAW_ADAPTER.md): OpenClaw SSH adapter
+- [docs/PHASE3_HERMES_LAN_CLI.md](docs/PHASE3_HERMES_LAN_CLI.md): Hermes first-round CLI route and persistent-session follow-up
 - [docs/PHASE4_DEVICE_HTTP.md](docs/PHASE4_DEVICE_HTTP.md): device HTTP simulator
 - [docs/PHASE4B_DEVICE_PAIRING.md](docs/PHASE4B_DEVICE_PAIRING.md): durable device pairing
 - [docs/PHASE5_HARDWARE_RECON.md](docs/PHASE5_HARDWARE_RECON.md): hardware recon before firmware
@@ -86,7 +87,7 @@ Voice bridge service
         v
 Agent services
   OpenClaw
-  Hermes
+  Hermes persistent session for Xiaoyuan
   Zebra session runtime
 ```
 
@@ -116,10 +117,12 @@ Do not migrate Zebra's implementation into firmware.
 
 1. Text bridge: accept a text command and forward it to a backend.
 2. OpenClaw adapter: forward commands through a private SSH/CLI path.
-3. Agent adapter: normalize OpenClaw, Hermes, and Zebra session responses.
+3. Agent adapter: normalize OpenClaw, Hermes, and Zebra session responses;
+   Xiaoyuan's product-demo route uses a Bridge-managed persistent Hermes session.
 4. Firmware backup: keep a restorable copy of the stock board flash.
 5. Custom firmware skeleton: WiFi, secure config, display states, bridge hello.
-6. Voice loop: ASR command in, agent result out, TTS response back.
+6. Voice loop: ASR command in, multi-turn agent session and progress events out,
+   TTS response back.
 
 ## 6. References
 

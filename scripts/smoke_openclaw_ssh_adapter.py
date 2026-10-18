@@ -23,9 +23,13 @@ def main() -> None:
         fake_ssh.write_text(
             """#!/usr/bin/env python3
 import json
+import os
+import shlex
 import sys
+from pathlib import Path
 
 remote_command = sys.argv[-1]
+argv = shlex.split(remote_command)
 ssh_target = sys.argv[-2] if len(sys.argv) > 2 else ""
 if " health " in f" {remote_command} ":
     print(json.dumps({"ok": True, "status": "live"}))
@@ -40,6 +44,36 @@ elif " -z " in f" {remote_command} ":
         print("missing --toolsets safe", file=sys.stderr)
         sys.exit(2)
     print("Hermes收到：测试命令")
+elif " chat " in f" {remote_command} ":
+    session_dir = Path(os.environ["FAKE_HERMES_SESSION_DIR"])
+    if "--continue" in argv:
+        title = argv[argv.index("--continue") + 1]
+        if not (session_dir / title.replace("/", "_")).exists():
+            print(f"No session found matching '{title}'.", file=sys.stderr)
+            sys.exit(1)
+    if ssh_target == "fake-hermes" and "--skills" in argv:
+        if "--toolsets" not in argv or argv[argv.index("--toolsets") + 1] != "browser":
+            print("missing --toolsets browser", file=sys.stderr)
+            sys.exit(2)
+        if argv[argv.index("--skills") + 1] != "xiaoyuan-browser-demo":
+            print("missing --skills xiaoyuan-browser-demo", file=sys.stderr)
+            sys.exit(2)
+    elif ssh_target == "fake-hermes":
+        if "--safe-mode" not in argv:
+            print("missing --safe-mode", file=sys.stderr)
+            sys.exit(2)
+        if "--toolsets" not in argv or argv[argv.index("--toolsets") + 1] != "safe":
+            print("missing --toolsets safe", file=sys.stderr)
+            sys.exit(2)
+    print("reasoning output ignored")
+    print("session_id: fake-hermes-session")
+    print("Hermes技能收到：测试命令" if "--skills" in argv else "Hermes收到：测试命令")
+elif " sessions rename " in f" {remote_command} ":
+    session_dir = Path(os.environ["FAKE_HERMES_SESSION_DIR"])
+    session_dir.mkdir(parents=True, exist_ok=True)
+    title = argv[-1]
+    (session_dir / title.replace("/", "_")).write_text(argv[-2], encoding="utf-8")
+    print("renamed")
 else:
     print("unexpected command", remote_command, file=sys.stderr)
     sys.exit(2)
@@ -93,12 +127,23 @@ else:
                     "XOB_HERMES_ENABLE_COMMANDS": "1",
                     "XOB_HERMES_SAFE_MODE": "1",
                     "XOB_HERMES_TOOLSETS": "safe",
+                    "FAKE_HERMES_SESSION_DIR": str(tmp_path / "hermes-sessions"),
                 }
             )
             _run_command_smoke(
                 tmp_path / "bridge-hermes.sqlite3",
                 "hermes",
                 expected_text="Hermes收到：测试命令",
+                repeat=True,
+            )
+
+            os.environ.pop("XOB_HERMES_SAFE_MODE")
+            os.environ["XOB_HERMES_TOOLSETS"] = "browser"
+            os.environ["XOB_HERMES_SKILLS"] = "xiaoyuan-browser-demo"
+            _run_command_smoke(
+                tmp_path / "bridge-hermes-skill.sqlite3",
+                "hermes",
+                expected_text="Hermes技能收到：测试命令",
             )
         finally:
             os.environ.clear()
@@ -111,6 +156,7 @@ def _run_command_smoke(
     target: str,
     context: dict[str, str] | None = None,
     expected_text: str = "龙虾收到：测试命令",
+    repeat: bool = False,
 ) -> None:
     server = build_server("127.0.0.1", 0, db)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -126,12 +172,22 @@ def _run_command_smoke(
         assert response["status"] == "done"
         assert response["text"] == expected_text
         session_id = response["session_id"]
+        if repeat:
+            payload["session_id"] = session_id
+            response = _post_json(f"http://{host}:{port}/command", payload)
+            assert response["session_id"] == session_id
+            assert response["target"] == target
+            assert response["status"] == "done"
+            assert response["text"] == expected_text
         with sqlite3.connect(db) as conn:
             events = conn.execute(
                 "SELECT type FROM session_events WHERE session_id = ? ORDER BY seq",
                 (session_id,),
             ).fetchall()
-        assert [row[0] for row in events] == ["command.received", "backend.response"]
+        expected_events = ["command.received", "backend.response"]
+        if repeat:
+            expected_events += ["command.received", "backend.response"]
+        assert [row[0] for row in events] == expected_events
     finally:
         server.shutdown()
         server.server_close()

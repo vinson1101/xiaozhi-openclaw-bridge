@@ -249,13 +249,44 @@ Tasks:
 - [x] Configure the Hermes-branch Bridge deployment with the same real
   ASR/TTS/OPUS voice-chain environment as the validated OpenClaw Bridge.
 - [ ] Add Lobster adapter using the same `AgentRequest` / `AgentResponse` contract after its API/CLI shape is confirmed.
-- [ ] Prefer token or sentence streaming for Hermes/Lobster voice targets; synchronous full-text responses are acceptable only for bring-up.
+- [x] Record the synchronous Hermes CLI route as the first-round connectivity
+  baseline, not the final product-demo architecture.
 
 Acceptance:
 
 - Hermes can be selected by `target:"hermes"` using the same `/command` API.
 - See `docs/PHASE3_HERMES_LAN_CLI.md` for this branch's Hermes LAN task list
   and validation evidence.
+
+## Phase 3B - Persistent Hermes Demo Session
+
+Goal: support Xiaoyuan's multi-turn dialogue and product demonstrations while
+keeping Bridge as the board-facing voice gateway.
+
+Tasks:
+
+- [x] Verify the supported Hermes persistent-session surface:
+  `hermes chat --quiet --resume <session_id>` / `--continue <title>`.
+- [x] Map Bridge sessions to reusable Hermes sessions by creating the first
+  Hermes chat turn, reading `session_id: ...`, then renaming the Hermes session
+  to the Bridge session key for later `--continue`.
+- [ ] Add a real Hermes event/progress interface if one is exposed; do not
+  scrape interactive CLI output to fake streaming.
+- [ ] Forward started, speakable text, tool progress, final, approval, error,
+  and cancellation events through the Bridge.
+- [ ] Preserve the current Bridge ASR/TTS/OPUS route for the first validation.
+- [ ] Make board abort stop TTS and cancel the active Hermes run without
+  discarding completed conversation context.
+- [ ] Validate three related spoken turns, a product-demo progress update, and
+  an interrupt followed by a new usable turn.
+
+Acceptance:
+
+- Xiaoyuan resolves references to earlier visitor turns in one session.
+- A long-running product demonstration produces a timely spoken progress or
+  completion update instead of a silent synchronous wait.
+- Native Hermes microphone/speaker mode is not required for the board path.
+- See `docs/PHASE3_HERMES_LAN_CLI.md` for the decision and detailed boundary.
 
 ## Phase 4 - Device Protocol And Simulator
 
@@ -457,17 +488,12 @@ Acceptance:
 
 ## Next Task
 
-Continue Phase 7 voice-loop work against the reachable Bridge host. The
-board-to-VPS-to-OpenClaw `huntmind` chain is proven with Bailian ASR/TTS, OPUS
-downlink, no-interrupt continuous dialogue, LISTENING display recovery, and
-light first-syllable playback padding. The old physical middle-button submit
-path has been replaced with XiaoZhi-style listening cancel-to-idle; latest VPS
-logs show normal board communication after that change, while full long-lived
-audio-channel semantics remains unfinished. Keep WiFi/Bridge configuration
-per-environment. This branch connects Hermes through the LAN CLI path; richer
-Hermes API or native ASR/TTS provider integration should wait until those
-contracts are confirmed. Replace the remaining bring-up state machine with
-long-lived audio-channel semantics only if the current XiaoZhi-style path proves
-insufficient.
+Start Phase 3B against the reachable Bridge host. The current board-to-Bridge
+voice loop and the first-round Hermes CLI route are proven, but the synchronous
+CLI process cannot deliver multi-turn Xiaoyuan dialogue or in-task product-demo
+updates. Keep Bridge's existing ASR/TTS/OPUS and board state machine intact;
+first verify a supported persistent Hermes session/event interface, then
+implement the session mapping and event translation. Do not divert this phase
+into Hermes host-native microphone/speaker work.
 
 Do not store WiFi passwords, device tokens, VPS connection strings, flash backups, or raw device identifiers in Git.

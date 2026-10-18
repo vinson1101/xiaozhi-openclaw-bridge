@@ -226,6 +226,7 @@ class HermesCliAdapter:
         self.target_name = target_name
         self.safe_mode = _truthy(os.environ.get(f"{self.config.env_prefix}_SAFE_MODE"))
         self.toolsets = os.environ.get(f"{self.config.env_prefix}_TOOLSETS", "").strip()
+        self.skills = os.environ.get(f"{self.config.env_prefix}_SKILLS", "").strip()
 
     def run(self, request: AgentRequest) -> AgentResponse:
         if not self.config.ssh_target:
@@ -237,7 +238,7 @@ class HermesCliAdapter:
             )
         if not self.config.enable_commands:
             return self._health_only()
-        return self._oneshot(request)
+        return self._session_turn(request)
 
     def _health_only(self) -> AgentResponse:
         result = self._run_hermes(["--version"], timeout=15)
@@ -250,7 +251,7 @@ class HermesCliAdapter:
             artifacts=[],
         )
 
-    def _oneshot(self, request: AgentRequest) -> AgentResponse:
+    def _session_turn(self, request: AgentRequest) -> AgentResponse:
         prompt = request.user_text
         if request.context.get("mode") == "voice":
             prompt = (
@@ -258,21 +259,54 @@ class HermesCliAdapter:
                 "【语音输出要求】请只返回要朗读的中文口语内容：一到两句话，80字以内；"
                 "不要 Markdown、编号、列表、代码块、表情符号或解释格式要求。"
             )
-        args = ["-z", prompt]
-        if self.toolsets:
-            args[:0] = ["--toolsets", self.toolsets]
-        if self.safe_mode:
-            args.insert(0, "--safe-mode")
+        session_key = f"{self.config.session_prefix}:{request.session_id}"
+        args = self._chat_args(prompt, session_key=session_key)
         result = self._run_hermes(args, timeout=self.config.command_timeout + 15)
+        created_session = False
+        if result.returncode != 0 and _is_missing_hermes_session(result):
+            result = self._run_hermes(self._chat_args(prompt, session_key=None), timeout=self.config.command_timeout + 15)
+            created_session = True
         if result.returncode != 0:
             return _process_error_response("Hermes CLI 调用失败", result)
-        text = result.stdout.strip()
+        hermes_session_id = _extract_hermes_session_id(f"{result.stdout}\n{result.stderr}")
+        if created_session:
+            if not hermes_session_id:
+                return AgentResponse(
+                    status="error",
+                    text="Hermes 没有返回可保存的会话 ID。",
+                    summary=f"{self.target_name} session id missing",
+                    artifacts=[{"type": "hermes_cli", "target": self.target_name, "hermes_session_key": session_key}],
+                )
+            rename = self._run_hermes(["sessions", "rename", hermes_session_id, session_key], timeout=15)
+            if rename.returncode != 0:
+                return _process_error_response("Hermes 会话保存失败", rename)
+        text = _extract_hermes_chat_text(result.stdout)
         return AgentResponse(
             status="done" if text else "error",
             text=text or "Hermes 没有返回内容。",
-            summary=f"{self.target_name} oneshot",
-            artifacts=[{"type": "hermes_cli", "target": self.target_name}],
+            summary=f"{self.target_name} session {'created' if created_session else 'resumed'}",
+            artifacts=[
+                {
+                    "type": "hermes_cli",
+                    "target": self.target_name,
+                    "hermes_session_key": session_key,
+                    "hermes_session_id": hermes_session_id,
+                }
+            ],
         )
+
+    def _chat_args(self, prompt: str, session_key: str | None) -> list[str]:
+        args = ["chat", "--quiet", "--source", "xiaozhi-bridge"]
+        if session_key:
+            args.extend(["--continue", session_key])
+        if self.toolsets:
+            args.extend(["--toolsets", self.toolsets])
+        if self.skills:
+            args.extend(["--skills", self.skills])
+        if self.safe_mode:
+            args.append("--safe-mode")
+        args.extend(["--query", prompt])
+        return args
 
     def _run_hermes(self, args: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
         started_at = time.monotonic()
@@ -344,6 +378,30 @@ class HermesCliAdapter:
             flush=True,
         )
         return result
+
+
+def _extract_hermes_chat_text(stdout: str) -> str:
+    return next(
+        (
+            line.strip()
+            for line in reversed(stdout.splitlines())
+            if line.strip() and not line.strip().lower().startswith("session_id:")
+        ),
+        "",
+    )
+
+
+def _extract_hermes_session_id(stdout: str) -> str:
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("session_id:"):
+            return stripped.split(":", 1)[1].strip()
+    return ""
+
+
+def _is_missing_hermes_session(result: subprocess.CompletedProcess[str]) -> bool:
+    output = f"{result.stdout}\n{result.stderr}".lower()
+    return "no session found" in output
 
 
 def adapter_for(target: str) -> Any:
